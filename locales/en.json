@@ -84,6 +84,8 @@
     "back_to_setup": "← Book Setup",
     "continue_project": "Continue Project",
     "save_global_settings": "Save Global Settings",
+    "test_connection": "Test",
+    "refresh_models": "Refresh Models",
     "open_exports_folder": "Open Exports Folder",
     "open_projects_folder": "Open Projects Folder"
   },
@@ -149,7 +151,11 @@
     "outline_ready": "Outline ready for review",
     "project_loaded": "Project loaded",
     "project_saved": "Project saved",
-    "exported": "Export completed"
+    "exported": "Export completed",
+    "testing_connection": "Testing provider connection...",
+    "loading_models": "Loading available models...",
+    "connection_ok": "Connection successful",
+    "models_updated": "Model catalog updated"
   },
   "log": {
     "outline_started": "Outline generation started with {provider} / {model}.",
@@ -193,7 +199,9 @@
     "export_completed": "The export completed successfully.",
     "global_settings_missing": "No global model settings have been saved yet. You can continue with the displayed defaults or configure them from Global Settings.",
     "global_settings_saved": "Global model settings were saved. New book projects will preload them.",
-    "outline_locked": "The outline cannot be regenerated after book generation has started."
+    "outline_locked": "The outline cannot be regenerated after book generation has started.",
+    "connection_ok": "Connection to {provider} was successful.",
+    "models_updated": "Loaded and cached {count} model(s) from {provider}."
   },
   "error": {
     "missing_api_key": "An API key is required for {provider}. Enter one for this session or set {env_var} in .env.",
@@ -206,6 +214,9 @@
     "no_project": "Generate or load an outline before using this action.",
     "no_chapters": "The project does not contain any chapters.",
     "busy": "Please wait for the current operation to finish.",
+    "connection_test_failed": "The provider connection test failed.\n\n{error}",
+    "model_refresh_failed": "The model catalog could not be updated.\n\n{error}",
+    "no_models_returned": "The provider did not return any compatible models.",
     "open_folder_failed": "The folder could not be opened.\n\n{error}",
     "open_folder_unsupported": "Opening folders is not supported on this platform."
   }

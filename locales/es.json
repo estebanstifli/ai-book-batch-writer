@@ -84,6 +84,8 @@
     "back_to_setup": "← Configurar libro",
     "continue_project": "Continuar proyecto",
     "save_global_settings": "Guardar configuración global",
+    "test_connection": "Probar",
+    "refresh_models": "Actualizar modelos",
     "open_exports_folder": "Abrir carpeta de exportaciones",
     "open_projects_folder": "Abrir carpeta de proyectos"
   },
@@ -149,7 +151,11 @@
     "outline_ready": "Esquema listo para revisar",
     "project_loaded": "Proyecto cargado",
     "project_saved": "Proyecto guardado",
-    "exported": "Exportación completada"
+    "exported": "Exportación completada",
+    "testing_connection": "Probando la conexión con el proveedor...",
+    "loading_models": "Cargando los modelos disponibles...",
+    "connection_ok": "Conexión correcta",
+    "models_updated": "Catálogo de modelos actualizado"
   },
   "log": {
     "outline_started": "Generación del esquema iniciada con {provider} / {model}.",
@@ -193,7 +199,9 @@
     "export_completed": "La exportación se ha completado correctamente.",
     "global_settings_missing": "Todavía no se ha guardado una configuración global del modelo. Puedes continuar con los valores mostrados o configurarlos desde Configuración global.",
     "global_settings_saved": "La configuración global del modelo se ha guardado. Se precargará en los proyectos nuevos.",
-    "outline_locked": "El esquema no se puede volver a generar después de iniciar la generación del libro."
+    "outline_locked": "El esquema no se puede volver a generar después de iniciar la generación del libro.",
+    "connection_ok": "La conexión con {provider} se ha realizado correctamente.",
+    "models_updated": "Se han cargado y guardado {count} modelo(s) de {provider}."
   },
   "error": {
     "missing_api_key": "Se necesita una clave API para {provider}. Introdúcela para esta sesión o configura {env_var} en .env.",
@@ -206,6 +214,9 @@
     "no_project": "Genera o carga un esquema antes de usar esta acción.",
     "no_chapters": "El proyecto no contiene capítulos.",
     "busy": "Espera a que termine la operación actual.",
+    "connection_test_failed": "La prueba de conexión con el proveedor ha fallado.\n\n{error}",
+    "model_refresh_failed": "No se ha podido actualizar el catálogo de modelos.\n\n{error}",
+    "no_models_returned": "El proveedor no ha devuelto ningún modelo compatible.",
     "open_folder_failed": "No se ha podido abrir la carpeta.\n\n{error}",
     "open_folder_unsupported": "Esta plataforma no permite abrir carpetas desde la aplicación."
   }

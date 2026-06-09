@@ -24,6 +24,9 @@ the interface evolves.
 - Dashboard with Create Books, Book Maintenance, Global Settings and Utilities
 - Guided 1 → 2 → 3 creation flow that locks the outline after writing starts
 - Reusable global model defaults with per-book overrides
+- Provider connection tests for cloud credentials and local Ollama
+- Editable model dropdowns populated from each provider's live catalog
+- Local JSON model cache for fast startup and offline reuse
 - OpenAI, OpenRouter, Anthropic Claude, Google Gemini and local Ollama
   providers through dedicated LangChain integrations
 - Real LangChain prompt templates, chat model abstraction and invocation chains
@@ -69,6 +72,8 @@ src/ai_book_batch_writer/
 ├─ app.py                 # Dashboard, guided workflow and worker queue
 ├─ models.py              # Pydantic domain models
 ├─ llm_providers.py       # Multi-provider LangChain factory
+├─ provider_discovery.py  # Connection tests and live model catalogs
+├─ model_catalog.py       # Credential-free JSON model cache
 ├─ generation_service.py  # Outline and long-form orchestration
 ├─ prompts.py             # ChatPromptTemplate definitions
 ├─ json_utils.py          # Extraction, validation and repair
@@ -80,6 +85,10 @@ src/ai_book_batch_writer/
 Provider-specific code is isolated in `llm_providers.py`. Each integration
 returns LangChain's common `BaseChatModel` interface, so the prompt and
 generation services remain provider-independent.
+
+Model discovery uses each provider's official REST catalog. Refreshed model
+identifiers are stored under the user's application data directory in
+`model_cache.json`; the cache contains model names and timestamps only.
 
 ## Install From Source
 
@@ -132,7 +141,9 @@ The application also supports dedicated LangChain integrations for:
 | Google Gemini | `GOOGLE_API_KEY` | `gemini-2.5-flash` |
 
 Cloud API endpoints are managed by their integrations and are not exposed in
-the UI. The API Base URL field is shown only for Ollama.
+the UI. The API Base URL field is shown only for Ollama. Use **Test** to
+validate the current credential, or **Refresh Models** to update the editable
+model dropdown from the provider.
 
 ## Using Ollama Locally
 
@@ -225,6 +236,7 @@ keys fall back to English.
 - Project JSON files and preference files omit API keys.
 - UI-entered credentials, including keys entered in Global Settings, are
   session-only.
+- The model catalog cache never stores credentials or request headers.
 - Revoke a key immediately if it is ever exposed in source code, logs,
   screenshots or commit history.
 - Review exported content before sharing it; generated text can contain

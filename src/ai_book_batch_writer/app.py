@@ -31,6 +31,7 @@ from ai_book_batch_writer.llm_providers import (
     provider_requires_api_key,
     provider_supports_api_base,
 )
+from ai_book_batch_writer.model_catalog import ModelCatalogStore
 from ai_book_batch_writer.models import (
     BookOutline,
     BookProject,
@@ -40,6 +41,10 @@ from ai_book_batch_writer.models import (
     TokenUsage,
 )
 from ai_book_batch_writer.project_store import load_project, save_project
+from ai_book_batch_writer.provider_discovery import (
+    list_provider_models,
+    test_provider_connection,
+)
 from ai_book_batch_writer.settings_store import SettingsStore
 from ai_book_batch_writer.utils import CancelToken, GenerationCancelled
 
@@ -52,6 +57,7 @@ class AIBookBatchWriterApp(ctk.CTk):
     def __init__(self) -> None:
         load_environment()
         self.settings_store = SettingsStore()
+        self.model_catalog_store = ModelCatalogStore()
         self.preferences = self.settings_store.load()
         self.translator = Translator(self.preferences.get("language", "en"))
         self._refresh_locale_maps()
@@ -230,6 +236,18 @@ class AIBookBatchWriterApp(ctk.CTk):
                 if code == provider_code
             ),
             self.t("provider.openai"),
+        )
+
+    def _model_values(self, provider: str, current: str = "") -> list[str]:
+        values = self.model_catalog_store.models_for(provider)
+        default = get_provider_spec(provider).default_model
+        return sorted(
+            {
+                value.strip()
+                for value in [current, default, *values]
+                if value and value.strip()
+            },
+            key=str.casefold,
         )
 
     def _build_ui(self) -> None:
@@ -468,29 +486,71 @@ class AIBookBatchWriterApp(ctk.CTk):
             command=lambda _: self._apply_provider_defaults(force=True),
         )
         self.provider_menu.grid(row=0, column=1, padx=10, pady=8, sticky="ew")
-        self._entry(model_panel, 1, "label.model", self.model_var)
         self.api_key_label = self._label(
             model_panel,
-            2,
+            1,
             "label.api_key",
         )
+        self.api_key_frame = ctk.CTkFrame(model_panel, fg_color="transparent")
+        self.api_key_frame.grid(row=1, column=1, padx=10, pady=8, sticky="ew")
+        self.api_key_frame.grid_columnconfigure(0, weight=1)
         self.api_key_entry = ctk.CTkEntry(
-            model_panel,
+            self.api_key_frame,
             textvariable=self.api_key_var,
             show="*",
             placeholder_text=self.t("placeholder.api_key"),
         )
-        self.api_key_entry.grid(row=2, column=1, padx=10, pady=8, sticky="ew")
+        self.api_key_entry.grid(row=0, column=0, sticky="ew")
+        self.project_api_test_button = ctk.CTkButton(
+            self.api_key_frame,
+            text=self.t("button.test_connection"),
+            command=lambda: self._test_connection("project"),
+            width=92,
+        )
+        self.project_api_test_button.grid(row=0, column=1, padx=(8, 0))
+        self.busy_sensitive_buttons.append(self.project_api_test_button)
+
+        self._label(model_panel, 2, "label.model")
+        self.model_frame = ctk.CTkFrame(model_panel, fg_color="transparent")
+        self.model_frame.grid(row=2, column=1, padx=10, pady=8, sticky="ew")
+        self.model_frame.grid_columnconfigure(0, weight=1)
+        self.model_combo = ctk.CTkComboBox(
+            self.model_frame,
+            values=self._model_values(self._provider_code(), self.model_var.get()),
+            variable=self.model_var,
+            state="normal",
+        )
+        self.model_combo.grid(row=0, column=0, sticky="ew")
+        self.project_models_button = ctk.CTkButton(
+            self.model_frame,
+            text=self.t("button.refresh_models"),
+            command=lambda: self._refresh_models("project"),
+            width=118,
+        )
+        self.project_models_button.grid(row=0, column=1, padx=(8, 0))
+        self.busy_sensitive_buttons.append(self.project_models_button)
+
         self.api_base_label = self._label(
             model_panel,
             3,
             "label.api_base",
         )
+        self.api_base_frame = ctk.CTkFrame(model_panel, fg_color="transparent")
+        self.api_base_frame.grid(row=3, column=1, padx=10, pady=8, sticky="ew")
+        self.api_base_frame.grid_columnconfigure(0, weight=1)
         self.api_base_entry = ctk.CTkEntry(
-            model_panel,
+            self.api_base_frame,
             textvariable=self.api_base_var,
         )
-        self.api_base_entry.grid(row=3, column=1, padx=10, pady=8, sticky="ew")
+        self.api_base_entry.grid(row=0, column=0, sticky="ew")
+        self.project_local_test_button = ctk.CTkButton(
+            self.api_base_frame,
+            text=self.t("button.test_connection"),
+            command=lambda: self._test_connection("project"),
+            width=92,
+        )
+        self.project_local_test_button.grid(row=0, column=1, padx=(8, 0))
+        self.busy_sensitive_buttons.append(self.project_local_test_button)
         self._entry(model_panel, 4, "label.temperature", self.temperature_var)
         self._entry(model_panel, 5, "label.max_tokens", self.max_tokens_var)
 
@@ -769,20 +829,83 @@ class AIBookBatchWriterApp(ctk.CTk):
             command=lambda _: self._apply_global_provider_defaults(force=True),
         )
         self.global_provider_menu.grid(row=0, column=1, padx=10, pady=8, sticky="ew")
-        self._entry(panel, 1, "label.model", self.global_model_var)
-        self.global_api_key_label = self._label(panel, 2, "label.api_key")
+        self.global_api_key_label = self._label(panel, 1, "label.api_key")
+        self.global_api_key_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        self.global_api_key_frame.grid(
+            row=1,
+            column=1,
+            padx=10,
+            pady=8,
+            sticky="ew",
+        )
+        self.global_api_key_frame.grid_columnconfigure(0, weight=1)
         self.global_api_key_entry = ctk.CTkEntry(
-            panel,
+            self.global_api_key_frame,
             textvariable=self.global_api_key_var,
             show="*",
         )
-        self.global_api_key_entry.grid(row=2, column=1, padx=10, pady=8, sticky="ew")
+        self.global_api_key_entry.grid(row=0, column=0, sticky="ew")
+        self.global_api_test_button = ctk.CTkButton(
+            self.global_api_key_frame,
+            text=self.t("button.test_connection"),
+            command=lambda: self._test_connection("global"),
+            width=92,
+        )
+        self.global_api_test_button.grid(row=0, column=1, padx=(8, 0))
+        self.busy_sensitive_buttons.append(self.global_api_test_button)
+
+        self._label(panel, 2, "label.model")
+        self.global_model_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        self.global_model_frame.grid(
+            row=2,
+            column=1,
+            padx=10,
+            pady=8,
+            sticky="ew",
+        )
+        self.global_model_frame.grid_columnconfigure(0, weight=1)
+        self.global_model_combo = ctk.CTkComboBox(
+            self.global_model_frame,
+            values=self._model_values(
+                self._global_provider_code(),
+                self.global_model_var.get(),
+            ),
+            variable=self.global_model_var,
+            state="normal",
+        )
+        self.global_model_combo.grid(row=0, column=0, sticky="ew")
+        self.global_models_button = ctk.CTkButton(
+            self.global_model_frame,
+            text=self.t("button.refresh_models"),
+            command=lambda: self._refresh_models("global"),
+            width=118,
+        )
+        self.global_models_button.grid(row=0, column=1, padx=(8, 0))
+        self.busy_sensitive_buttons.append(self.global_models_button)
+
         self.global_api_base_label = self._label(panel, 3, "label.api_base")
+        self.global_api_base_frame = ctk.CTkFrame(panel, fg_color="transparent")
+        self.global_api_base_frame.grid(
+            row=3,
+            column=1,
+            padx=10,
+            pady=8,
+            sticky="ew",
+        )
+        self.global_api_base_frame.grid_columnconfigure(0, weight=1)
         self.global_api_base_entry = ctk.CTkEntry(
-            panel,
+            self.global_api_base_frame,
             textvariable=self.global_api_base_var,
         )
-        self.global_api_base_entry.grid(row=3, column=1, padx=10, pady=8, sticky="ew")
+        self.global_api_base_entry.grid(row=0, column=0, sticky="ew")
+        self.global_local_test_button = ctk.CTkButton(
+            self.global_api_base_frame,
+            text=self.t("button.test_connection"),
+            command=lambda: self._test_connection("global"),
+            width=92,
+        )
+        self.global_local_test_button.grid(row=0, column=1, padx=(8, 0))
+        self.busy_sensitive_buttons.append(self.global_local_test_button)
         self._entry(panel, 4, "label.temperature", self.global_temperature_var)
         self._entry(panel, 5, "label.max_tokens", self.global_max_tokens_var)
         ctk.CTkLabel(
@@ -1094,13 +1217,16 @@ class AIBookBatchWriterApp(ctk.CTk):
                 self.global_api_base_var.set(spec.default_api_base or "")
         else:
             self.global_api_base_var.set("")
+        self.global_model_combo.configure(
+            values=self._model_values(provider, self.global_model_var.get())
+        )
         self._update_global_provider_fields()
 
     def _update_global_provider_fields(self) -> None:
         provider = self._global_provider_code()
         if provider_requires_api_key(provider):
             self.global_api_key_label.grid()
-            self.global_api_key_entry.grid()
+            self.global_api_key_frame.grid()
             self.global_api_key_entry.configure(
                 placeholder_text=self.t(
                     "placeholder.api_key_env",
@@ -1109,13 +1235,13 @@ class AIBookBatchWriterApp(ctk.CTk):
             )
         else:
             self.global_api_key_label.grid_remove()
-            self.global_api_key_entry.grid_remove()
+            self.global_api_key_frame.grid_remove()
         if provider_supports_api_base(provider):
             self.global_api_base_label.grid()
-            self.global_api_base_entry.grid()
+            self.global_api_base_frame.grid()
         else:
             self.global_api_base_label.grid_remove()
-            self.global_api_base_entry.grid_remove()
+            self.global_api_base_frame.grid_remove()
 
     def _global_llm_settings_from_form(self) -> LLMSettings:
         provider = self._global_provider_code()
@@ -1131,6 +1257,59 @@ class AIBookBatchWriterApp(ctk.CTk):
             temperature=float(self.global_temperature_var.get()),
             max_tokens=int(self.global_max_tokens_var.get()),
         )
+
+    def _settings_for_scope(self, scope: str) -> LLMSettings:
+        if scope == "project":
+            return self._llm_settings_from_form()
+        settings = self._global_llm_settings_from_form()
+        if (
+            provider_requires_api_key(settings.provider)
+            and not provider_api_key(settings)
+        ):
+            raise ValueError(
+                self.t(
+                    "error.missing_api_key",
+                    provider=self.global_provider_var.get(),
+                    env_var=provider_key_env_display(settings.provider),
+                )
+            )
+        return settings
+
+    def _test_connection(self, scope: str) -> None:
+        if self.is_busy:
+            return
+        try:
+            settings = self._settings_for_scope(scope)
+        except (ValueError, ValidationError) as exc:
+            self._show_error("error.invalid_settings", exc)
+            return
+        self.status_var.set(self.t("status.testing_connection"))
+        self.task_var.set(self.t("status.testing_connection"))
+
+        def work() -> str:
+            test_provider_connection(settings)
+            return settings.provider
+
+        self._start_worker(f"connection:{scope}", work)
+
+    def _refresh_models(self, scope: str) -> None:
+        if self.is_busy:
+            return
+        try:
+            settings = self._settings_for_scope(scope)
+        except (ValueError, ValidationError) as exc:
+            self._show_error("error.invalid_settings", exc)
+            return
+        self.status_var.set(self.t("status.loading_models"))
+        self.task_var.set(self.t("status.loading_models"))
+
+        def work() -> tuple[str, list[str]]:
+            models = list_provider_models(settings)
+            if not models:
+                raise ValueError(self.t("error.no_models_returned"))
+            return settings.provider, models
+
+        self._start_worker(f"models:{scope}", work)
 
     def _save_global_settings(self) -> None:
         try:
@@ -1427,13 +1606,16 @@ class AIBookBatchWriterApp(ctk.CTk):
                 self.api_base_var.set(spec.default_api_base or "")
         else:
             self.api_base_var.set("")
+        self.model_combo.configure(
+            values=self._model_values(provider, self.model_var.get())
+        )
         self._update_provider_fields()
 
     def _update_provider_fields(self) -> None:
         provider = self._provider_code()
         if provider_requires_api_key(provider):
             self.api_key_label.grid()
-            self.api_key_entry.grid()
+            self.api_key_frame.grid()
             self.api_key_entry.configure(
                 placeholder_text=self.t(
                     "placeholder.api_key_env",
@@ -1442,14 +1624,14 @@ class AIBookBatchWriterApp(ctk.CTk):
             )
         else:
             self.api_key_label.grid_remove()
-            self.api_key_entry.grid_remove()
+            self.api_key_frame.grid_remove()
 
         if provider_supports_api_base(provider):
             self.api_base_label.grid()
-            self.api_base_entry.grid()
+            self.api_base_frame.grid()
         else:
             self.api_base_label.grid_remove()
-            self.api_base_entry.grid_remove()
+            self.api_base_frame.grid_remove()
 
     def _llm_settings_from_form(
         self,
@@ -1675,6 +1857,44 @@ class AIBookBatchWriterApp(ctk.CTk):
 
     def _handle_success(self, operation: str, result: Any) -> None:
         self._set_busy(False)
+        if operation.startswith("connection:"):
+            provider = str(result)
+            self.status_var.set(self.t("status.connection_ok"))
+            self.task_var.set(self.t("status.connection_ok"))
+            messagebox.showinfo(
+                self.t("dialog.information_title"),
+                self.t(
+                    "message.connection_ok",
+                    provider=self.t(f"provider.{provider}"),
+                ),
+            )
+            return
+        if operation.startswith("models:"):
+            scope = operation.split(":", 1)[1]
+            provider, models = result
+            cached_models = self.model_catalog_store.update(provider, models)
+            if scope == "global":
+                self.global_model_combo.configure(
+                    values=self._model_values(
+                        provider,
+                        self.global_model_var.get(),
+                    )
+                )
+            else:
+                self.model_combo.configure(
+                    values=self._model_values(provider, self.model_var.get())
+                )
+            self.status_var.set(self.t("status.models_updated"))
+            self.task_var.set(self.t("status.models_updated"))
+            messagebox.showinfo(
+                self.t("dialog.information_title"),
+                self.t(
+                    "message.models_updated",
+                    count=len(cached_models),
+                    provider=self.t(f"provider.{provider}"),
+                ),
+            )
+            return
         if operation == "outline":
             outline, usage = result
             if not self.title_var.get().strip():
@@ -1740,9 +1960,17 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.task_var.set(self.t("status.failed"))
         self._append_log(self.t("log.error", error=str(error)))
         key = (
-            "error.generation_failed"
-            if operation in {"outline", "book"}
-            else "error.invalid_settings"
+            "error.connection_test_failed"
+            if operation.startswith("connection:")
+            else (
+                "error.model_refresh_failed"
+                if operation.startswith("models:")
+                else (
+                    "error.generation_failed"
+                    if operation in {"outline", "book"}
+                    else "error.invalid_settings"
+                )
+            )
         )
         self._show_error(key, error)
         self._update_maintenance_summary()
