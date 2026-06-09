@@ -1,0 +1,150 @@
+{
+  "app": {
+    "title": "AI Book Batch Writer",
+    "tagline": "Redacción de textos largos basada en esquemas con modelos de IA locales y en la nube"
+  },
+  "tab": {
+    "setup": "Configuración del proyecto",
+    "outline": "Editor del esquema",
+    "book": "Vista previa y registros"
+  },
+  "panel": {
+    "model_settings": "Configuración del modelo",
+    "book_settings": "Configuración del libro",
+    "outline_editor": "JSON editable del esquema",
+    "result_preview": "Vista previa del contenido generado",
+    "progress_log": "Registro de progreso"
+  },
+  "provider": {
+    "openai": "OpenAI",
+    "openrouter": "OpenRouter",
+    "anthropic": "Anthropic Claude",
+    "gemini": "Google Gemini",
+    "ollama": "Ollama"
+  },
+  "button": {
+    "generate_outline": "Generar esquema",
+    "generate_book": "Generar libro",
+    "cancel": "Cancelar",
+    "save_project": "Guardar proyecto",
+    "load_project": "Cargar proyecto",
+    "export_markdown": "Exportar Markdown",
+    "export_txt": "Exportar TXT",
+    "export_docx": "Exportar DOCX",
+    "clear_log": "Limpiar registro"
+  },
+  "label": {
+    "provider": "Proveedor",
+    "model": "Modelo",
+    "api_key": "Clave API",
+    "api_base": "URL base de la API",
+    "temperature": "Temperatura",
+    "max_tokens": "Tokens máximos",
+    "book_title": "Título provisional",
+    "idea": "Idea principal",
+    "output_language": "Idioma de salida",
+    "tone": "Tono",
+    "target_audience": "Público objetivo",
+    "chapter_count": "Número de capítulos",
+    "words_per_chapter": "Palabras por capítulo",
+    "additional_instructions": "Instrucciones adicionales",
+    "interface_language": "Interfaz",
+    "appearance": "Apariencia",
+    "current_task": "Tarea actual",
+    "total_tokens": "Tokens totales",
+    "estimated_suffix": " (estimados)"
+  },
+  "placeholder": {
+    "api_key": "Introduce la clave API para esta sesión",
+    "api_key_env": "Usa {env_var} si se deja vacío",
+    "main_idea": "Describe el tema, el objetivo y el alcance deseado del libro.",
+    "additional_instructions": "Indicaciones opcionales de estilo, estructura, precisión o formato.",
+    "outline": "Genera o carga un esquema y revisa o edita aquí su JSON.",
+    "preview": "Los capítulos y secciones generados aparecerán aquí.",
+    "log": "Los eventos de generación aparecerán aquí."
+  },
+  "default": {
+    "output_language": "Español",
+    "tone": "Claro y profesional",
+    "target_audience": "Lectores generales",
+    "chapter_count": "8",
+    "words_per_chapter": "1200",
+    "temperature": "0.7",
+    "max_tokens": "3000",
+    "untitled_book": "Libro sin título"
+  },
+  "language": {
+    "en": "Inglés",
+    "es": "Español"
+  },
+  "appearance": {
+    "system": "Sistema",
+    "dark": "Oscuro",
+    "light": "Claro"
+  },
+  "status": {
+    "ready": "Listo",
+    "generating_outline": "Generando esquema...",
+    "generating_book": "Generando libro...",
+    "saving": "Guardando proyecto...",
+    "completed": "Completado",
+    "completed_with_errors": "Completado con errores",
+    "cancelled": "Cancelado",
+    "cancelling": "Se cancelará después de la solicitud actual al modelo...",
+    "failed": "Error",
+    "outline_ready": "Esquema listo para revisar",
+    "project_loaded": "Proyecto cargado",
+    "project_saved": "Proyecto guardado",
+    "exported": "Exportación completada"
+  },
+  "log": {
+    "outline_started": "Generación del esquema iniciada con {provider} / {model}.",
+    "outline_completed": "Esquema generado con {chapters} capítulos ({tokens} tokens; {total_tokens} en total).",
+    "book_started": "Generación del libro iniciada.",
+    "chapter_started": "Iniciando capítulo {number}: {title}",
+    "section_started": "Capítulo {chapter}: generando la sección «{section}».",
+    "section_completed": "Sección «{section}» completada ({words} palabras, unos {tokens} tokens; {total_tokens} en total).",
+    "chapter_completed": "Capítulo {number} completado ({words} palabras, unos {tokens} tokens; {total_tokens} en total).",
+    "chapter_failed": "Error en el capítulo {number}: {error}",
+    "book_completed": "Generación del libro finalizada. Tokens totales: {total_tokens}.",
+    "book_completed_with_errors": "Generación finalizada con {failed} capítulo(s) con errores. Tokens totales: {total_tokens}.",
+    "cancel_requested": "Cancelación solicitada.",
+    "project_saved": "Proyecto guardado en {path}.",
+    "project_loaded": "Proyecto cargado desde {path}.",
+    "exported": "{format} exportado a {path}.",
+    "error": "Error: {error}"
+  },
+  "dialog": {
+    "error_title": "AI Book Batch Writer",
+    "information_title": "AI Book Batch Writer",
+    "save_project": "Guardar proyecto",
+    "load_project": "Cargar proyecto",
+    "export_markdown": "Exportar Markdown",
+    "export_txt": "Exportar TXT",
+    "export_docx": "Exportar DOCX",
+    "json_files": "Archivos de proyecto JSON",
+    "markdown_files": "Archivos Markdown",
+    "text_files": "Archivos de texto",
+    "docx_files": "Documentos de Word",
+    "all_files": "Todos los archivos",
+    "confirm_close_title": "Generación en curso",
+    "confirm_close": "La generación sigue en curso. ¿Quieres cancelarla y cerrar la aplicación?"
+  },
+  "message": {
+    "project_saved": "El proyecto se ha guardado correctamente.",
+    "project_loaded": "El proyecto se ha cargado correctamente.",
+    "export_completed": "La exportación se ha completado correctamente."
+  },
+  "error": {
+    "missing_api_key": "Se necesita una clave API para {provider}. Introdúcela para esta sesión o configura {env_var} en .env.",
+    "invalid_settings": "Revisa la configuración del proyecto.\n\n{error}",
+    "invalid_outline": "El JSON del esquema está vacío o no es válido.\n\n{error}",
+    "generation_failed": "La generación ha fallado.\n\n{error}",
+    "save_failed": "No se ha podido guardar el proyecto.\n\n{error}",
+    "load_failed": "No se ha podido cargar el proyecto.\n\n{error}",
+    "export_failed": "No se ha podido completar la exportación.\n\n{error}",
+    "no_project": "Genera o carga un esquema antes de usar esta acción.",
+    "no_chapters": "El proyecto no contiene capítulos.",
+    "busy": "Espera a que termine la operación actual."
+  }
+}

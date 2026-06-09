@@ -1,0 +1,150 @@
+{
+  "app": {
+    "title": "AI Book Batch Writer",
+    "tagline": "Outline-first long-form drafting across cloud and local AI models"
+  },
+  "tab": {
+    "setup": "Project Setup",
+    "outline": "Outline Editor",
+    "book": "Book Preview & Logs"
+  },
+  "panel": {
+    "model_settings": "Model Settings",
+    "book_settings": "Book Settings",
+    "outline_editor": "Editable Outline JSON",
+    "result_preview": "Generated Content Preview",
+    "progress_log": "Progress Log"
+  },
+  "provider": {
+    "openai": "OpenAI",
+    "openrouter": "OpenRouter",
+    "anthropic": "Anthropic Claude",
+    "gemini": "Google Gemini",
+    "ollama": "Ollama"
+  },
+  "button": {
+    "generate_outline": "Generate Outline",
+    "generate_book": "Generate Book",
+    "cancel": "Cancel",
+    "save_project": "Save Project",
+    "load_project": "Load Project",
+    "export_markdown": "Export Markdown",
+    "export_txt": "Export TXT",
+    "export_docx": "Export DOCX",
+    "clear_log": "Clear Log"
+  },
+  "label": {
+    "provider": "Provider",
+    "model": "Model",
+    "api_key": "API Key",
+    "api_base": "API Base URL",
+    "temperature": "Temperature",
+    "max_tokens": "Max Tokens",
+    "book_title": "Working Title",
+    "idea": "Main Idea",
+    "output_language": "Output Language",
+    "tone": "Tone",
+    "target_audience": "Target Audience",
+    "chapter_count": "Chapter Count",
+    "words_per_chapter": "Words per Chapter",
+    "additional_instructions": "Additional Instructions",
+    "interface_language": "Interface",
+    "appearance": "Appearance",
+    "current_task": "Current Task",
+    "total_tokens": "Total Tokens",
+    "estimated_suffix": " (estimated)"
+  },
+  "placeholder": {
+    "api_key": "Enter the API key for this session",
+    "api_key_env": "Uses {env_var} when left blank",
+    "main_idea": "Describe the subject, purpose and desired scope of the book.",
+    "additional_instructions": "Optional style, structure, factual or formatting guidance.",
+    "outline": "Generate or load an outline, then review and edit its JSON here.",
+    "preview": "Generated chapters and sections will appear here.",
+    "log": "Generation events will appear here."
+  },
+  "default": {
+    "output_language": "English",
+    "tone": "Clear and professional",
+    "target_audience": "General readers",
+    "chapter_count": "8",
+    "words_per_chapter": "1200",
+    "temperature": "0.7",
+    "max_tokens": "3000",
+    "untitled_book": "Untitled Book"
+  },
+  "language": {
+    "en": "English",
+    "es": "Spanish"
+  },
+  "appearance": {
+    "system": "System",
+    "dark": "Dark",
+    "light": "Light"
+  },
+  "status": {
+    "ready": "Ready",
+    "generating_outline": "Generating outline...",
+    "generating_book": "Generating book...",
+    "saving": "Saving project...",
+    "completed": "Completed",
+    "completed_with_errors": "Completed with errors",
+    "cancelled": "Cancelled",
+    "cancelling": "Cancelling after the current model request...",
+    "failed": "Failed",
+    "outline_ready": "Outline ready for review",
+    "project_loaded": "Project loaded",
+    "project_saved": "Project saved",
+    "exported": "Export completed"
+  },
+  "log": {
+    "outline_started": "Outline generation started with {provider} / {model}.",
+    "outline_completed": "Outline generated with {chapters} chapters ({tokens} tokens; {total_tokens} total).",
+    "book_started": "Book generation started.",
+    "chapter_started": "Starting chapter {number}: {title}",
+    "section_started": "Chapter {chapter}: generating section \"{section}\".",
+    "section_completed": "Completed section \"{section}\" ({words} words, about {tokens} tokens; {total_tokens} total).",
+    "chapter_completed": "Completed chapter {number} ({words} words, about {tokens} tokens; {total_tokens} total).",
+    "chapter_failed": "Chapter {number} failed: {error}",
+    "book_completed": "Book generation finished. Total tokens: {total_tokens}.",
+    "book_completed_with_errors": "Book generation finished with {failed} failed chapter(s). Total tokens: {total_tokens}.",
+    "cancel_requested": "Cancellation requested.",
+    "project_saved": "Project saved to {path}.",
+    "project_loaded": "Project loaded from {path}.",
+    "exported": "Exported {format} to {path}.",
+    "error": "Error: {error}"
+  },
+  "dialog": {
+    "error_title": "AI Book Batch Writer",
+    "information_title": "AI Book Batch Writer",
+    "save_project": "Save Project",
+    "load_project": "Load Project",
+    "export_markdown": "Export Markdown",
+    "export_txt": "Export TXT",
+    "export_docx": "Export DOCX",
+    "json_files": "JSON project files",
+    "markdown_files": "Markdown files",
+    "text_files": "Text files",
+    "docx_files": "Word documents",
+    "all_files": "All files",
+    "confirm_close_title": "Generation in progress",
+    "confirm_close": "Generation is still running. Cancel it and close the application?"
+  },
+  "message": {
+    "project_saved": "The project was saved successfully.",
+    "project_loaded": "The project was loaded successfully.",
+    "export_completed": "The export completed successfully."
+  },
+  "error": {
+    "missing_api_key": "An API key is required for {provider}. Enter one for this session or set {env_var} in .env.",
+    "invalid_settings": "Please review the project settings.\n\n{error}",
+    "invalid_outline": "The outline JSON is missing or invalid.\n\n{error}",
+    "generation_failed": "Generation failed.\n\n{error}",
+    "save_failed": "The project could not be saved.\n\n{error}",
+    "load_failed": "The project could not be loaded.\n\n{error}",
+    "export_failed": "The export could not be completed.\n\n{error}",
+    "no_project": "Generate or load an outline before using this action.",
+    "no_chapters": "The project does not contain any chapters.",
+    "busy": "Please wait for the current operation to finish."
+  }
+}

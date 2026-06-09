@@ -1,0 +1,79 @@
+{
+  "schema_version": 2,
+  "settings": {
+    "title": "Practical AI Automation",
+    "idea": "A beginner-friendly guide to designing reliable AI-assisted workflows for small teams.",
+    "output_language": "English",
+    "tone": "Clear and professional",
+    "target_audience": "Technical beginners and small business teams",
+    "chapter_count": 2,
+    "words_per_chapter": 900,
+    "additional_instructions": "Use practical examples and flag claims that should be verified."
+  },
+  "llm_settings": {
+    "provider": "ollama",
+    "model": "llama3.1",
+    "api_base": "http://localhost:11434",
+    "temperature": 0.7,
+    "max_tokens": 3000
+  },
+  "subtitle": "From First Prototype to Reliable Workflow",
+  "chapters": [
+    {
+      "number": 1,
+      "title": "Choosing the Right Automation",
+      "summary": "Define a useful problem, users, boundaries and success criteria.",
+      "sections": [
+        {
+          "title": "Start With the Workflow",
+          "summary": "Map the existing human process before choosing a model.",
+          "content": null,
+          "status": "pending",
+          "error": null
+        },
+        {
+          "title": "Define Reliability",
+          "summary": "Turn quality, latency and cost expectations into checks.",
+          "content": null,
+          "status": "pending",
+          "error": null
+        }
+      ],
+      "content": null,
+      "status": "pending",
+      "error": null
+    },
+    {
+      "number": 2,
+      "title": "Building the First Version",
+      "summary": "Create a small, observable implementation with human review.",
+      "sections": [
+        {
+          "title": "Prompt and Data Boundaries",
+          "summary": "Separate instructions, user data and expected output schemas.",
+          "content": null,
+          "status": "pending",
+          "error": null
+        },
+        {
+          "title": "Evaluation and Feedback",
+          "summary": "Collect examples and improve the workflow with repeatable tests.",
+          "content": null,
+          "status": "pending",
+          "error": null
+        }
+      ],
+      "content": null,
+      "status": "pending",
+      "error": null
+    }
+  ],
+  "token_usage": {
+    "outline_tokens": 0,
+    "book_tokens": 0,
+    "total_tokens": 0,
+    "estimated": false
+  },
+  "created_at": "2026-06-09T10:00:00Z",
+  "updated_at": "2026-06-09T10:00:00Z"
+}
