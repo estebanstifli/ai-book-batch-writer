@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-book-batch-writer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Desktop application for outline-first, chapter-by-chapter long-form writing with LangChain."
 readme = "README.md"
 requires-python = ">=3.11"

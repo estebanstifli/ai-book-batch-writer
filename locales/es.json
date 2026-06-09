@@ -8,8 +8,54 @@
     "outline": "Editor del esquema",
     "book": "Vista previa y registros"
   },
+  "home": {
+    "title": "¿Qué quieres hacer?",
+    "subtitle": "Elige un área para empezar o continuar tu trabajo.",
+    "navigation_hint": "Crea, gestiona y exporta proyectos de escritura extensa con IA.",
+    "create_title": "Crear libros",
+    "create_description": "Inicia un proyecto guiado, genera su esquema y redacta el libro capítulo a capítulo.",
+    "maintenance_title": "Mantenimiento de libros",
+    "maintenance_description": "Carga un proyecto existente, revisa su progreso y continúa trabajando en él.",
+    "settings_title": "Configuración global",
+    "settings_description": "Elige el proveedor y modelo de IA predeterminados para los proyectos nuevos.",
+    "utilities_title": "Otras utilidades",
+    "utilities_description": "Exporta el proyecto actual o abre las carpetas de proyectos y exportaciones."
+  },
+  "navigation": {
+    "maintenance": "Mantenimiento de libros",
+    "settings": "Configuración global",
+    "utilities": "Otras utilidades"
+  },
+  "wizard": {
+    "step_1": "1  Configurar libro",
+    "step_2": "2  Revisar esquema",
+    "step_3": "3  Generar y exportar",
+    "override_hint": "Se precarga la configuración global. Los cambios aquí solo afectan a este libro.",
+    "book_locked_hint": "El esquema queda bloqueado cuando comienza la generación del libro."
+  },
+  "maintenance": {
+    "title": "Mantenimiento de libros",
+    "description": "Abre un proyecto JSON guardado y continúa desde su etapa actual.",
+    "current_project": "Proyecto actual",
+    "no_project": "No hay ningún proyecto cargado",
+    "no_project_detail": "Carga un proyecto para consultar sus capítulos, progreso y consumo de tokens.",
+    "project_detail": "{completed} de {chapters} capítulos completados · {tokens} tokens"
+  },
+  "settings": {
+    "title": "Configuración global",
+    "description": "Estos valores se precargan cada vez que creas un libro nuevo.",
+    "configured": "Configuración global del modelo guardada",
+    "not_configured": "La configuración global del modelo aún no se ha guardado",
+    "security_note": "Las claves API introducidas aquí se conservan solo durante la sesión actual. Nunca se guardan en la configuración ni en los proyectos."
+  },
+  "utilities": {
+    "title": "Otras utilidades",
+    "description": "Acceso rápido a las exportaciones y carpetas de trabajo."
+  },
   "panel": {
     "model_settings": "Configuración del modelo",
+    "project_model_settings": "Configuración del modelo para este libro",
+    "global_model_settings": "Configuración predeterminada del modelo",
     "book_settings": "Configuración del libro",
     "outline_editor": "JSON editable del esquema",
     "result_preview": "Vista previa del contenido generado",
@@ -23,6 +69,9 @@
     "ollama": "Ollama"
   },
   "button": {
+    "home": "⌂ Inicio",
+    "back_home": "← Inicio",
+    "open": "Abrir",
     "generate_outline": "Generar esquema",
     "generate_book": "Generar libro",
     "cancel": "Cancelar",
@@ -31,7 +80,12 @@
     "export_markdown": "Exportar Markdown",
     "export_txt": "Exportar TXT",
     "export_docx": "Exportar DOCX",
-    "clear_log": "Limpiar registro"
+    "clear_log": "Limpiar registro",
+    "back_to_setup": "← Configurar libro",
+    "continue_project": "Continuar proyecto",
+    "save_global_settings": "Guardar configuración global",
+    "open_exports_folder": "Abrir carpeta de exportaciones",
+    "open_projects_folder": "Abrir carpeta de proyectos"
   },
   "label": {
     "provider": "Proveedor",
@@ -128,12 +182,18 @@
     "docx_files": "Documentos de Word",
     "all_files": "Todos los archivos",
     "confirm_close_title": "Generación en curso",
-    "confirm_close": "La generación sigue en curso. ¿Quieres cancelarla y cerrar la aplicación?"
+    "confirm_close": "La generación sigue en curso. ¿Quieres cancelarla y cerrar la aplicación?",
+    "global_settings_title": "Configuración global del modelo",
+    "new_project_title": "Crear un libro nuevo",
+    "new_project_confirm": "El proyecto actual en memoria será sustituido. ¿Quieres continuar?"
   },
   "message": {
     "project_saved": "El proyecto se ha guardado correctamente.",
     "project_loaded": "El proyecto se ha cargado correctamente.",
-    "export_completed": "La exportación se ha completado correctamente."
+    "export_completed": "La exportación se ha completado correctamente.",
+    "global_settings_missing": "Todavía no se ha guardado una configuración global del modelo. Puedes continuar con los valores mostrados o configurarlos desde Configuración global.",
+    "global_settings_saved": "La configuración global del modelo se ha guardado. Se precargará en los proyectos nuevos.",
+    "outline_locked": "El esquema no se puede volver a generar después de iniciar la generación del libro."
   },
   "error": {
     "missing_api_key": "Se necesita una clave API para {provider}. Introdúcela para esta sesión o configura {env_var} en .env.",
@@ -145,6 +205,8 @@
     "export_failed": "No se ha podido completar la exportación.\n\n{error}",
     "no_project": "Genera o carga un esquema antes de usar esta acción.",
     "no_chapters": "El proyecto no contiene capítulos.",
-    "busy": "Espera a que termine la operación actual."
+    "busy": "Espera a que termine la operación actual.",
+    "open_folder_failed": "No se ha podido abrir la carpeta.\n\n{error}",
+    "open_folder_unsupported": "Esta plataforma no permite abrir carpetas desde la aplicación."
   }
 }

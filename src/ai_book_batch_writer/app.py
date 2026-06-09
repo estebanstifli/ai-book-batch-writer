@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 from datetime import datetime
@@ -61,6 +62,9 @@ class AIBookBatchWriterApp(ctk.CTk):
         super().__init__()
 
         self.project: BookProject | None = None
+        self.current_page = "home"
+        self.current_step = 1
+        self.book_generation_started = False
         self.cancel_token = CancelToken()
         self.worker_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: threading.Thread | None = None
@@ -94,30 +98,81 @@ class AIBookBatchWriterApp(ctk.CTk):
         }
 
     def _create_variables(self) -> None:
-        provider_code = str(self.preferences.get("provider", "openai")).lower()
+        global_config = self.preferences.get("global_llm")
+        if not isinstance(global_config, dict):
+            global_config = {}
+        self.global_configured = bool(
+            global_config.get("provider") and global_config.get("model")
+        )
+        provider_code = str(
+            global_config.get(
+                "provider",
+                self.preferences.get("provider", "openai"),
+            )
+        ).lower()
         if provider_code not in PROVIDER_SPECS:
             provider_code = "openai"
-        provider = next(
-            (
-                label
-                for label, code in self.provider_labels.items()
-                if code == provider_code
-            ),
-            self.t("provider.openai"),
-        )
+        provider = self._provider_label(provider_code)
         self.provider_var = ctk.StringVar(value=provider)
         self.model_var = ctk.StringVar(
-            value=self.preferences.get(
+            value=global_config.get(
                 "model",
-                get_provider_spec(provider_code).default_model,
+                self.preferences.get(
+                    "model",
+                    get_provider_spec(provider_code).default_model,
+                ),
             )
         )
         self.api_key_var = ctk.StringVar()
         self.api_base_var = ctk.StringVar(
-            value=self.preferences.get("api_base", "")
+            value=global_config.get(
+                "api_base",
+                self.preferences.get("api_base", ""),
+            )
         )
-        self.temperature_var = ctk.StringVar(value=self.t("default.temperature"))
-        self.max_tokens_var = ctk.StringVar(value=self.t("default.max_tokens"))
+        self.temperature_var = ctk.StringVar(
+            value=str(
+                global_config.get(
+                    "temperature",
+                    self.t("default.temperature"),
+                )
+            )
+        )
+        self.max_tokens_var = ctk.StringVar(
+            value=str(
+                global_config.get(
+                    "max_tokens",
+                    self.t("default.max_tokens"),
+                )
+            )
+        )
+        self.global_provider_var = ctk.StringVar(value=provider)
+        self.global_model_var = ctk.StringVar(
+            value=global_config.get(
+                "model",
+                get_provider_spec(provider_code).default_model,
+            )
+        )
+        self.global_api_key_var = ctk.StringVar()
+        self.global_api_base_var = ctk.StringVar(
+            value=global_config.get("api_base", "")
+        )
+        self.global_temperature_var = ctk.StringVar(
+            value=str(
+                global_config.get(
+                    "temperature",
+                    self.t("default.temperature"),
+                )
+            )
+        )
+        self.global_max_tokens_var = ctk.StringVar(
+            value=str(
+                global_config.get(
+                    "max_tokens",
+                    self.t("default.max_tokens"),
+                )
+            )
+        )
         self.title_var = ctk.StringVar()
         self.output_language_var = ctk.StringVar(
             value=self.t("default.output_language")
@@ -133,6 +188,19 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.status_var = ctk.StringVar(value=self.t("status.ready"))
         self.task_var = ctk.StringVar(value=self.t("status.ready"))
         self.token_var = ctk.StringVar(value="0")
+        self.maintenance_title_var = ctk.StringVar(
+            value=self.t("maintenance.no_project")
+        )
+        self.maintenance_detail_var = ctk.StringVar(
+            value=self.t("maintenance.no_project_detail")
+        )
+        self.global_status_var = ctk.StringVar(
+            value=(
+                self.t("settings.configured")
+                if self.global_configured
+                else self.t("settings.not_configured")
+            )
+        )
         self.language_var = ctk.StringVar(
             value=next(
                 (
@@ -154,9 +222,22 @@ class AIBookBatchWriterApp(ctk.CTk):
             )
         )
 
+    def _provider_label(self, provider_code: str) -> str:
+        return next(
+            (
+                label
+                for label, code in self.provider_labels.items()
+                if code == provider_code
+            ),
+            self.t("provider.openai"),
+        )
+
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
+        self.busy_sensitive_buttons: list[ctk.CTkButton] = []
+        self.cancel_buttons: list[ctk.CTkButton] = []
+        self.step_buttons: dict[int, ctk.CTkButton] = {}
 
         header = ctk.CTkFrame(self, corner_radius=0)
         header.grid(row=0, column=0, sticky="ew")
@@ -177,10 +258,19 @@ class AIBookBatchWriterApp(ctk.CTk):
 
         header_controls = ctk.CTkFrame(header, fg_color="transparent")
         header_controls.grid(row=0, column=1, padx=20, pady=14, sticky="e")
+        ctk.CTkButton(
+            header_controls,
+            text=self.t("button.home"),
+            command=lambda: self._show_page("home"),
+            width=84,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray15", "gray90"),
+        ).grid(row=0, column=0, padx=(0, 14))
         ctk.CTkLabel(
             header_controls,
             text=self.t("label.interface_language"),
-        ).grid(row=0, column=0, padx=(0, 6))
+        ).grid(row=0, column=1, padx=(0, 6))
         self.language_menu = ctk.CTkOptionMenu(
             header_controls,
             values=list(self.language_labels),
@@ -188,51 +278,40 @@ class AIBookBatchWriterApp(ctk.CTk):
             command=self._change_language,
             width=110,
         )
-        self.language_menu.grid(row=0, column=1, padx=(0, 14))
+        self.language_menu.grid(row=0, column=2, padx=(0, 14))
         ctk.CTkLabel(
             header_controls,
             text=self.t("label.appearance"),
-        ).grid(row=0, column=2, padx=(0, 6))
+        ).grid(row=0, column=3, padx=(0, 6))
         ctk.CTkOptionMenu(
             header_controls,
             values=list(self.appearance_labels),
             variable=self.appearance_var,
             command=self._change_appearance,
             width=100,
-        ).grid(row=0, column=3)
+        ).grid(row=0, column=4)
 
-        actions = ctk.CTkFrame(self, corner_radius=0)
-        actions.grid(row=1, column=0, padx=0, pady=(1, 0), sticky="ew")
-        button_specs = [
-            ("button.generate_outline", self._generate_outline),
-            ("button.generate_book", self._generate_book),
-            ("button.cancel", self._cancel_generation),
-            ("button.save_project", self._save_project),
-            ("button.load_project", self._load_project),
-            ("button.export_markdown", lambda: self._export("md")),
-            ("button.export_txt", lambda: self._export("txt")),
-            ("button.export_docx", lambda: self._export("docx")),
-        ]
-        self.action_buttons: dict[str, ctk.CTkButton] = {}
-        for column, (key, command) in enumerate(button_specs):
-            button = ctk.CTkButton(
-                actions,
-                text=self.t(key),
-                command=command,
-                height=34,
-            )
-            button.grid(row=0, column=column, padx=(12 if column == 0 else 4, 4), pady=10)
-            self.action_buttons[key] = button
-        self.action_buttons["button.cancel"].configure(state="disabled")
+        self.secondary_header = ctk.CTkFrame(self, corner_radius=0, height=58)
+        self.secondary_header.grid(row=1, column=0, sticky="ew", pady=(1, 0))
+        self.secondary_header.grid_propagate(False)
 
-        self.tabs = ctk.CTkTabview(self)
-        self.tabs.grid(row=2, column=0, padx=12, pady=12, sticky="nsew")
-        self.setup_tab = self.tabs.add(self.t("tab.setup"))
-        self.outline_tab = self.tabs.add(self.t("tab.outline"))
-        self.book_tab = self.tabs.add(self.t("tab.book"))
-        self._build_setup_tab()
-        self._build_outline_tab()
-        self._build_book_tab()
+        self.page_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.page_container.grid(row=2, column=0, padx=16, pady=14, sticky="nsew")
+        self.page_container.grid_columnconfigure(0, weight=1)
+        self.page_container.grid_rowconfigure(0, weight=1)
+
+        self.pages: dict[str, ctk.CTkFrame] = {
+            name: ctk.CTkFrame(self.page_container, fg_color="transparent")
+            for name in ("home", "create", "maintenance", "settings", "utilities")
+        }
+        for page in self.pages.values():
+            page.grid(row=0, column=0, sticky="nsew")
+
+        self._build_home_page()
+        self._build_create_page()
+        self._build_maintenance_page()
+        self._build_global_settings_page()
+        self._build_utilities_page()
 
         footer = ctk.CTkFrame(self, corner_radius=0)
         footer.grid(row=3, column=0, sticky="ew")
@@ -267,14 +346,116 @@ class AIBookBatchWriterApp(ctk.CTk):
             width=170,
             anchor="e",
         ).grid(row=0, column=5, padx=(0, 16))
+        self._show_page(self.current_page, show_warning=False)
 
-    def _build_setup_tab(self) -> None:
-        self.setup_tab.grid_columnconfigure((0, 1), weight=1)
-        self.setup_tab.grid_rowconfigure(0, weight=1)
+    def _build_home_page(self) -> None:
+        page = self.pages["home"]
+        page.grid_columnconfigure((0, 1), weight=1, uniform="cards")
+        page.grid_rowconfigure((1, 2), weight=1, uniform="cards")
+        heading = ctk.CTkFrame(page, fg_color="transparent")
+        heading.grid(row=0, column=0, columnspan=2, pady=(8, 14))
+        ctk.CTkLabel(
+            heading,
+            text=self.t("home.title"),
+            font=ctk.CTkFont(size=27, weight="bold"),
+        ).pack()
+        ctk.CTkLabel(
+            heading,
+            text=self.t("home.subtitle"),
+            text_color=("gray35", "gray70"),
+        ).pack(pady=(4, 0))
+
+        cards = [
+            (
+                "create",
+                "✍",
+                "home.create_title",
+                "home.create_description",
+                self._start_new_book,
+            ),
+            (
+                "maintenance",
+                "▤",
+                "home.maintenance_title",
+                "home.maintenance_description",
+                lambda: self._show_page("maintenance"),
+            ),
+            (
+                "settings",
+                "⚙",
+                "home.settings_title",
+                "home.settings_description",
+                lambda: self._show_page("settings"),
+            ),
+            (
+                "utilities",
+                "◆",
+                "home.utilities_title",
+                "home.utilities_description",
+                lambda: self._show_page("utilities"),
+            ),
+        ]
+        for index, (_, icon, title_key, description_key, command) in enumerate(cards):
+            row = 1 + index // 2
+            column = index % 2
+            card = ctk.CTkFrame(page, corner_radius=16, border_width=1)
+            card.grid(
+                row=row,
+                column=column,
+                padx=(8, 5) if column == 0 else (5, 8),
+                pady=7,
+                sticky="nsew",
+            )
+            card.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(
+                card,
+                text=icon,
+                font=ctk.CTkFont(size=46, weight="bold"),
+                width=84,
+            ).grid(row=0, column=0, rowspan=3, padx=(22, 10), pady=22)
+            ctk.CTkLabel(
+                card,
+                text=self.t(title_key),
+                font=ctk.CTkFont(size=21, weight="bold"),
+                anchor="w",
+            ).grid(row=0, column=1, padx=(0, 22), pady=(24, 4), sticky="ew")
+            ctk.CTkLabel(
+                card,
+                text=self.t(description_key),
+                justify="left",
+                wraplength=430,
+                anchor="nw",
+                text_color=("gray35", "gray70"),
+            ).grid(row=1, column=1, padx=(0, 22), pady=4, sticky="nsew")
+            ctk.CTkButton(
+                card,
+                text=self.t("button.open"),
+                command=command,
+                width=130,
+            ).grid(row=2, column=1, padx=(0, 22), pady=(8, 22), sticky="e")
+
+    def _build_create_page(self) -> None:
+        page = self.pages["create"]
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_rowconfigure(0, weight=1)
+        self.create_steps: dict[int, ctk.CTkFrame] = {
+            step: ctk.CTkFrame(page, fg_color="transparent")
+            for step in (1, 2, 3)
+        }
+        for frame in self.create_steps.values():
+            frame.grid(row=0, column=0, sticky="nsew")
+        self._build_setup_step()
+        self._build_outline_step()
+        self._build_book_step()
+
+    def _build_setup_step(self) -> None:
+        parent = self.create_steps[1]
+        parent.grid_columnconfigure((0, 1), weight=1)
+        parent.grid_rowconfigure(0, weight=1)
 
         model_panel = ctk.CTkScrollableFrame(
-            self.setup_tab,
-            label_text=self.t("panel.model_settings"),
+            parent,
+            label_text=self.t("panel.project_model_settings"),
         )
         model_panel.grid(row=0, column=0, padx=(8, 5), pady=8, sticky="nsew")
         model_panel.grid_columnconfigure(1, weight=1)
@@ -314,7 +495,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         self._entry(model_panel, 5, "label.max_tokens", self.max_tokens_var)
 
         book_panel = ctk.CTkScrollableFrame(
-            self.setup_tab,
+            parent,
             label_text=self.t("panel.book_settings"),
         )
         book_panel.grid(row=0, column=1, padx=(5, 8), pady=8, sticky="nsew")
@@ -352,35 +533,102 @@ class AIBookBatchWriterApp(ctk.CTk):
             self.instructions_text,
             "placeholder.additional_instructions",
         )
-
-    def _build_outline_tab(self) -> None:
-        self.outline_tab.grid_columnconfigure(0, weight=1)
-        self.outline_tab.grid_rowconfigure(1, weight=1)
+        actions = ctk.CTkFrame(parent, fg_color="transparent")
+        actions.grid(row=1, column=0, columnspan=2, padx=8, pady=(5, 0), sticky="ew")
+        actions.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            self.outline_tab,
+            actions,
+            text=self.t("wizard.override_hint"),
+            text_color=("gray35", "gray70"),
+        ).grid(row=0, column=0, sticky="w")
+        generate = ctk.CTkButton(
+            actions,
+            text=self.t("button.generate_outline"),
+            command=self._generate_outline,
+            height=38,
+            width=180,
+        )
+        generate.grid(row=0, column=1, padx=(8, 4))
+        self.busy_sensitive_buttons.append(generate)
+        cancel = ctk.CTkButton(
+            actions,
+            text=self.t("button.cancel"),
+            command=self._cancel_generation,
+            state="disabled",
+            width=110,
+            fg_color=("gray65", "gray30"),
+        )
+        cancel.grid(row=0, column=2, padx=(4, 0))
+        self.cancel_buttons.append(cancel)
+
+    def _build_outline_step(self) -> None:
+        parent = self.create_steps[2]
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(
+            parent,
             text=self.t("panel.outline_editor"),
             font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
         self.outline_text = ctk.CTkTextbox(
-            self.outline_tab,
+            parent,
             wrap="none",
             font=ctk.CTkFont(family="Consolas", size=13),
         )
-        self.outline_text.grid(row=1, column=0, padx=12, pady=(4, 12), sticky="nsew")
+        self.outline_text.grid(row=1, column=0, padx=12, pady=(4, 8), sticky="nsew")
         self._set_placeholder(self.outline_text, "placeholder.outline")
+        actions = ctk.CTkFrame(parent, fg_color="transparent")
+        actions.grid(row=2, column=0, padx=12, pady=(0, 4), sticky="ew")
+        self.outline_back_button = ctk.CTkButton(
+            actions,
+            text=self.t("button.back_to_setup"),
+            command=lambda: self._show_create_step(1),
+            width=150,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray15", "gray90"),
+        )
+        self.outline_back_button.pack(side="left")
+        save = ctk.CTkButton(
+            actions,
+            text=self.t("button.save_project"),
+            command=self._save_project,
+            width=140,
+        )
+        save.pack(side="right", padx=(6, 0))
+        generate = ctk.CTkButton(
+            actions,
+            text=self.t("button.generate_book"),
+            command=self._generate_book,
+            width=170,
+            height=38,
+        )
+        generate.pack(side="right", padx=(6, 0))
+        self.busy_sensitive_buttons.extend([save, generate, self.outline_back_button])
+        cancel = ctk.CTkButton(
+            actions,
+            text=self.t("button.cancel"),
+            command=self._cancel_generation,
+            state="disabled",
+            width=110,
+            fg_color=("gray65", "gray30"),
+        )
+        cancel.pack(side="right", padx=(6, 0))
+        self.cancel_buttons.append(cancel)
 
-    def _build_book_tab(self) -> None:
-        self.book_tab.grid_columnconfigure(0, weight=3)
-        self.book_tab.grid_columnconfigure(1, weight=2)
-        self.book_tab.grid_rowconfigure(1, weight=1)
+    def _build_book_step(self) -> None:
+        parent = self.create_steps[3]
+        parent.grid_columnconfigure(0, weight=3)
+        parent.grid_columnconfigure(1, weight=2)
+        parent.grid_rowconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            self.book_tab,
+            parent,
             text=self.t("panel.result_preview"),
             font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
 
-        log_header = ctk.CTkFrame(self.book_tab, fg_color="transparent")
+        log_header = ctk.CTkFrame(parent, fg_color="transparent")
         log_header.grid(row=0, column=1, padx=12, pady=(8, 0), sticky="ew")
         log_header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
@@ -396,7 +644,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         ).grid(row=0, column=1, sticky="e")
 
         self.preview_text = ctk.CTkTextbox(
-            self.book_tab,
+            parent,
             font=ctk.CTkFont(size=13),
         )
         self.preview_text.grid(
@@ -408,7 +656,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         )
         self._set_placeholder(self.preview_text, "placeholder.preview")
         self.log_text = ctk.CTkTextbox(
-            self.book_tab,
+            parent,
             font=ctk.CTkFont(family="Consolas", size=12),
         )
         self.log_text.grid(
@@ -419,6 +667,517 @@ class AIBookBatchWriterApp(ctk.CTk):
             sticky="nsew",
         )
         self._set_placeholder(self.log_text, "placeholder.log")
+        actions = ctk.CTkFrame(parent, fg_color="transparent")
+        actions.grid(row=2, column=0, columnspan=2, padx=12, pady=(0, 4), sticky="ew")
+        ctk.CTkLabel(
+            actions,
+            text=self.t("wizard.book_locked_hint"),
+            text_color=("gray35", "gray70"),
+        ).pack(side="left")
+        for key, command in (
+            ("button.export_docx", lambda: self._export("docx")),
+            ("button.export_txt", lambda: self._export("txt")),
+            ("button.export_markdown", lambda: self._export("md")),
+            ("button.save_project", self._save_project),
+        ):
+            button = ctk.CTkButton(
+                actions,
+                text=self.t(key),
+                command=command,
+                width=125,
+            )
+            button.pack(side="right", padx=(6, 0))
+            self.busy_sensitive_buttons.append(button)
+        cancel = ctk.CTkButton(
+            actions,
+            text=self.t("button.cancel"),
+            command=self._cancel_generation,
+            state="disabled",
+            width=105,
+            fg_color=("gray65", "gray30"),
+        )
+        cancel.pack(side="right", padx=(6, 0))
+        self.cancel_buttons.append(cancel)
+
+    def _build_maintenance_page(self) -> None:
+        page = self.pages["maintenance"]
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_rowconfigure(2, weight=1)
+        self._page_title(page, "maintenance.title", "maintenance.description")
+        ctk.CTkButton(
+            page,
+            text=self.t("button.load_project"),
+            command=self._load_project,
+            height=42,
+            width=190,
+        ).grid(row=1, column=0, pady=(10, 16))
+        card = ctk.CTkFrame(page, corner_radius=16, border_width=1)
+        card.grid(row=2, column=0, padx=80, pady=(0, 30), sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            card,
+            text=self.t("maintenance.current_project"),
+            font=ctk.CTkFont(size=17, weight="bold"),
+        ).grid(row=0, column=0, padx=24, pady=(24, 6), sticky="w")
+        ctk.CTkLabel(
+            card,
+            textvariable=self.maintenance_title_var,
+            font=ctk.CTkFont(size=24, weight="bold"),
+        ).grid(row=1, column=0, padx=24, pady=6, sticky="w")
+        ctk.CTkLabel(
+            card,
+            textvariable=self.maintenance_detail_var,
+            text_color=("gray35", "gray70"),
+        ).grid(row=2, column=0, padx=24, pady=(0, 18), sticky="w")
+        actions = ctk.CTkFrame(card, fg_color="transparent")
+        actions.grid(row=3, column=0, padx=24, pady=(0, 24), sticky="w")
+        self.maintenance_continue_button = ctk.CTkButton(
+            actions,
+            text=self.t("button.continue_project"),
+            command=self._continue_project,
+            state="disabled",
+        )
+        self.maintenance_continue_button.pack(side="left")
+        self.maintenance_save_button = ctk.CTkButton(
+            actions,
+            text=self.t("button.save_project"),
+            command=self._save_project,
+            state="disabled",
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray15", "gray90"),
+        )
+        self.maintenance_save_button.pack(side="left", padx=8)
+
+    def _build_global_settings_page(self) -> None:
+        page = self.pages["settings"]
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_rowconfigure(1, weight=1)
+        self._page_title(page, "settings.title", "settings.description")
+        panel = ctk.CTkScrollableFrame(
+            page,
+            label_text=self.t("panel.global_model_settings"),
+            width=760,
+        )
+        panel.grid(row=1, column=0, padx=120, pady=16, sticky="nsew")
+        panel.grid_columnconfigure(1, weight=1)
+        self._label(panel, 0, "label.provider")
+        self.global_provider_menu = ctk.CTkOptionMenu(
+            panel,
+            values=list(self.provider_labels),
+            variable=self.global_provider_var,
+            command=lambda _: self._apply_global_provider_defaults(force=True),
+        )
+        self.global_provider_menu.grid(row=0, column=1, padx=10, pady=8, sticky="ew")
+        self._entry(panel, 1, "label.model", self.global_model_var)
+        self.global_api_key_label = self._label(panel, 2, "label.api_key")
+        self.global_api_key_entry = ctk.CTkEntry(
+            panel,
+            textvariable=self.global_api_key_var,
+            show="*",
+        )
+        self.global_api_key_entry.grid(row=2, column=1, padx=10, pady=8, sticky="ew")
+        self.global_api_base_label = self._label(panel, 3, "label.api_base")
+        self.global_api_base_entry = ctk.CTkEntry(
+            panel,
+            textvariable=self.global_api_base_var,
+        )
+        self.global_api_base_entry.grid(row=3, column=1, padx=10, pady=8, sticky="ew")
+        self._entry(panel, 4, "label.temperature", self.global_temperature_var)
+        self._entry(panel, 5, "label.max_tokens", self.global_max_tokens_var)
+        ctk.CTkLabel(
+            panel,
+            text=self.t("settings.security_note"),
+            justify="left",
+            wraplength=700,
+            text_color=("gray35", "gray70"),
+        ).grid(row=6, column=0, columnspan=2, padx=10, pady=(12, 6), sticky="w")
+        footer = ctk.CTkFrame(panel, fg_color="transparent")
+        footer.grid(row=7, column=0, columnspan=2, padx=10, pady=16, sticky="ew")
+        ctk.CTkLabel(
+            footer,
+            textvariable=self.global_status_var,
+            font=ctk.CTkFont(weight="bold"),
+        ).pack(side="left")
+        ctk.CTkButton(
+            footer,
+            text=self.t("button.save_global_settings"),
+            command=self._save_global_settings,
+            height=38,
+            width=210,
+        ).pack(side="right")
+        self._update_global_provider_fields()
+
+    def _build_utilities_page(self) -> None:
+        page = self.pages["utilities"]
+        page.grid_columnconfigure((0, 1), weight=1)
+        self._page_title(page, "utilities.title", "utilities.description", columns=2)
+        utilities = [
+            ("⬇", "button.export_markdown", lambda: self._export("md")),
+            ("T", "button.export_txt", lambda: self._export("txt")),
+            ("W", "button.export_docx", lambda: self._export("docx")),
+            ("▣", "button.open_exports_folder", self._open_exports_folder),
+            ("▤", "button.open_projects_folder", self._open_projects_folder),
+        ]
+        for index, (icon, key, command) in enumerate(utilities):
+            frame = ctk.CTkFrame(page, corner_radius=14, border_width=1)
+            frame.grid(
+                row=1 + index // 2,
+                column=index % 2,
+                padx=8,
+                pady=8,
+                sticky="nsew",
+            )
+            ctk.CTkLabel(
+                frame,
+                text=icon,
+                font=ctk.CTkFont(size=30, weight="bold"),
+                width=62,
+            ).pack(side="left", padx=(22, 8), pady=22)
+            ctk.CTkButton(
+                frame,
+                text=self.t(key),
+                command=command,
+                height=38,
+            ).pack(side="left", padx=(8, 22), pady=22, fill="x", expand=True)
+
+    def _page_title(
+        self,
+        parent: ctk.CTkFrame,
+        title_key: str,
+        description_key: str,
+        columns: int = 1,
+    ) -> None:
+        heading = ctk.CTkFrame(parent, fg_color="transparent")
+        heading.grid(row=0, column=0, columnspan=columns, pady=(14, 6))
+        ctk.CTkLabel(
+            heading,
+            text=self.t(title_key),
+            font=ctk.CTkFont(size=27, weight="bold"),
+        ).pack()
+        ctk.CTkLabel(
+            heading,
+            text=self.t(description_key),
+            text_color=("gray35", "gray70"),
+        ).pack(pady=(4, 0))
+
+    def _show_page(self, name: str, show_warning: bool = True) -> None:
+        if self.is_busy and name != self.current_page:
+            messagebox.showwarning(
+                self.t("dialog.information_title"),
+                self.t("error.busy"),
+            )
+            return
+        for page_name, page in self.pages.items():
+            if page_name == name:
+                page.grid()
+            else:
+                page.grid_remove()
+        self.current_page = name
+        if name == "create":
+            self._show_create_step(self.current_step, render_header=False)
+            if show_warning and not self.global_configured:
+                messagebox.showwarning(
+                    self.t("dialog.global_settings_title"),
+                    self.t("message.global_settings_missing"),
+                )
+        elif name == "maintenance":
+            self._update_maintenance_summary()
+        self._render_secondary_header()
+
+    def _render_secondary_header(self) -> None:
+        for child in self.secondary_header.winfo_children():
+            child.destroy()
+        self.secondary_header.grid_columnconfigure(0, weight=0)
+        self.secondary_header.grid_columnconfigure(1, weight=1)
+        self.secondary_header.grid_columnconfigure(2, weight=0)
+
+        if self.current_page == "home":
+            ctk.CTkLabel(
+                self.secondary_header,
+                text=self.t("home.navigation_hint"),
+                text_color=("gray35", "gray70"),
+            ).grid(row=0, column=1, pady=18)
+            return
+
+        ctk.CTkButton(
+            self.secondary_header,
+            text=self.t("button.back_home"),
+            command=lambda: self._show_page("home"),
+            width=110,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray15", "gray90"),
+        ).grid(row=0, column=0, padx=18, pady=11, sticky="w")
+        ctk.CTkLabel(
+            self.secondary_header,
+            text="",
+            width=146,
+        ).grid(row=0, column=2)
+
+        if self.current_page != "create":
+            ctk.CTkLabel(
+                self.secondary_header,
+                text=self.t(f"navigation.{self.current_page}"),
+                font=ctk.CTkFont(size=17, weight="bold"),
+            ).grid(row=0, column=1, pady=16)
+            return
+
+        stepper = ctk.CTkFrame(self.secondary_header, fg_color="transparent")
+        stepper.grid(row=0, column=1, pady=8)
+        self.step_buttons = {}
+        for step in (1, 2, 3):
+            if step > 1:
+                ctk.CTkLabel(
+                    stepper,
+                    text="→",
+                    font=ctk.CTkFont(size=19, weight="bold"),
+                    text_color=("gray45", "gray60"),
+                ).pack(side="left", padx=8)
+            button = ctk.CTkButton(
+                stepper,
+                text=self.t(f"wizard.step_{step}"),
+                command=lambda selected=step: self._show_create_step(selected),
+                width=190,
+                height=38,
+            )
+            button.pack(side="left")
+            self.step_buttons[step] = button
+        self._refresh_flow_ui()
+
+    def _show_create_step(
+        self,
+        step: int,
+        render_header: bool = True,
+    ) -> None:
+        if step == 1 and self._project_is_locked():
+            return
+        if step == 2 and not self._project_has_outline():
+            return
+        if step == 3 and not self._project_is_locked():
+            return
+        self.current_step = step
+        for number, frame in self.create_steps.items():
+            if number == step:
+                frame.grid()
+            else:
+                frame.grid_remove()
+        if render_header:
+            self._render_secondary_header()
+        else:
+            self._refresh_flow_ui()
+
+    def _refresh_flow_ui(self) -> None:
+        if not self.step_buttons:
+            return
+        has_outline = self._project_has_outline()
+        locked = self._project_is_locked()
+        for step, button in self.step_buttons.items():
+            enabled = (
+                (step == 1 and not locked)
+                or (step == 2 and has_outline and not locked)
+                or (step == 3 and locked)
+            )
+            if step == self.current_step:
+                button.configure(
+                    state="normal",
+                    fg_color=("#1f6aa5", "#1f6aa5"),
+                    hover_color=("#144870", "#144870"),
+                )
+            else:
+                button.configure(
+                    state="normal" if enabled else "disabled",
+                    fg_color=("gray65", "gray30"),
+                    hover_color=("gray55", "gray25"),
+                )
+        self.outline_back_button.configure(
+            state="disabled" if locked or self.is_busy else "normal"
+        )
+        self.outline_text.configure(state="disabled" if locked else "normal")
+
+    def _project_has_outline(self) -> bool:
+        return bool(self.project and self.project.chapters)
+
+    def _project_is_locked(self) -> bool:
+        if self.book_generation_started:
+            return True
+        if not self.project:
+            return False
+        if self.project.token_usage.book_tokens > 0:
+            return True
+        return any(
+            chapter.content
+            or chapter.status != "pending"
+            or any(section.content or section.status != "pending" for section in chapter.sections)
+            for chapter in self.project.chapters
+        )
+
+    def _start_new_book(self) -> None:
+        if self.project and not messagebox.askyesno(
+            self.t("dialog.new_project_title"),
+            self.t("dialog.new_project_confirm"),
+        ):
+            return
+        self.project = None
+        self.book_generation_started = False
+        self.current_step = 1
+        self._apply_global_to_project_form()
+        self.title_var.set("")
+        self.output_language_var.set(self.t("default.output_language"))
+        self.tone_var.set(self.t("default.tone"))
+        self.audience_var.set(self.t("default.target_audience"))
+        self.chapter_count_var.set(self.t("default.chapter_count"))
+        self.words_per_chapter_var.set(self.t("default.words_per_chapter"))
+        self._reset_textbox(self.idea_text, "placeholder.main_idea")
+        self._reset_textbox(
+            self.instructions_text,
+            "placeholder.additional_instructions",
+        )
+        self._reset_textbox(self.outline_text, "placeholder.outline")
+        self._reset_textbox(self.preview_text, "placeholder.preview")
+        self._reset_textbox(self.log_text, "placeholder.log")
+        self.progress_bar.set(0)
+        self.status_var.set(self.t("status.ready"))
+        self.task_var.set(self.t("status.ready"))
+        self._update_token_display()
+        self._update_maintenance_summary()
+        self._show_page("create")
+
+    def _reset_textbox(self, textbox: ctk.CTkTextbox, placeholder_key: str) -> None:
+        textbox.configure(state="normal")
+        textbox.delete("1.0", "end")
+        self._set_placeholder(textbox, placeholder_key)
+
+    def _continue_project(self) -> None:
+        if not self.project:
+            return
+        self.current_step = 3 if self._project_is_locked() else 2
+        self._show_page("create", show_warning=False)
+
+    def _update_maintenance_summary(self) -> None:
+        if not self.project:
+            self.maintenance_title_var.set(self.t("maintenance.no_project"))
+            self.maintenance_detail_var.set(
+                self.t("maintenance.no_project_detail")
+            )
+            self.maintenance_continue_button.configure(state="disabled")
+            self.maintenance_save_button.configure(state="disabled")
+            return
+        title = self.project.settings.title or self.t("default.untitled_book")
+        completed = sum(
+            chapter.status == "completed" for chapter in self.project.chapters
+        )
+        self.maintenance_title_var.set(title)
+        self.maintenance_detail_var.set(
+            self.t(
+                "maintenance.project_detail",
+                chapters=len(self.project.chapters),
+                completed=completed,
+                tokens=f"{self.project.token_usage.total_tokens:,}",
+            )
+        )
+        self.maintenance_continue_button.configure(state="normal")
+        self.maintenance_save_button.configure(state="normal")
+
+    def _global_provider_code(self) -> str:
+        return self.provider_labels[self.global_provider_var.get()]
+
+    def _apply_global_provider_defaults(self, force: bool) -> None:
+        provider = self._global_provider_code()
+        spec = get_provider_spec(provider)
+        if force or not self.global_model_var.get():
+            self.global_model_var.set(spec.default_model)
+        if force:
+            self.global_api_key_var.set("")
+        if spec.supports_api_base:
+            if force or not self.global_api_base_var.get():
+                self.global_api_base_var.set(spec.default_api_base or "")
+        else:
+            self.global_api_base_var.set("")
+        self._update_global_provider_fields()
+
+    def _update_global_provider_fields(self) -> None:
+        provider = self._global_provider_code()
+        if provider_requires_api_key(provider):
+            self.global_api_key_label.grid()
+            self.global_api_key_entry.grid()
+            self.global_api_key_entry.configure(
+                placeholder_text=self.t(
+                    "placeholder.api_key_env",
+                    env_var=provider_key_env_display(provider),
+                )
+            )
+        else:
+            self.global_api_key_label.grid_remove()
+            self.global_api_key_entry.grid_remove()
+        if provider_supports_api_base(provider):
+            self.global_api_base_label.grid()
+            self.global_api_base_entry.grid()
+        else:
+            self.global_api_base_label.grid_remove()
+            self.global_api_base_entry.grid_remove()
+
+    def _global_llm_settings_from_form(self) -> LLMSettings:
+        provider = self._global_provider_code()
+        return LLMSettings(
+            provider=provider,
+            model=self.global_model_var.get(),
+            api_key=self.global_api_key_var.get().strip() or None,
+            api_base=(
+                self.global_api_base_var.get()
+                if provider_supports_api_base(provider)
+                else None
+            ),
+            temperature=float(self.global_temperature_var.get()),
+            max_tokens=int(self.global_max_tokens_var.get()),
+        )
+
+    def _save_global_settings(self) -> None:
+        try:
+            settings = self._global_llm_settings_from_form()
+        except (ValueError, ValidationError) as exc:
+            self._show_error("error.invalid_settings", exc)
+            return
+        payload = settings.model_dump(exclude={"api_key"})
+        self.preferences = self.settings_store.save_merged(
+            {
+                "language": self.translator.language,
+                "appearance": self.appearance_labels[self.appearance_var.get()],
+                "global_llm": payload,
+            }
+        )
+        self.global_configured = True
+        self.global_status_var.set(self.t("settings.configured"))
+        messagebox.showinfo(
+            self.t("dialog.information_title"),
+            self.t("message.global_settings_saved"),
+        )
+
+    def _apply_global_to_project_form(self) -> None:
+        self.provider_var.set(self.global_provider_var.get())
+        self.model_var.set(self.global_model_var.get())
+        self.api_key_var.set(self.global_api_key_var.get())
+        self.api_base_var.set(self.global_api_base_var.get())
+        self.temperature_var.set(self.global_temperature_var.get())
+        self.max_tokens_var.set(self.global_max_tokens_var.get())
+        self._apply_provider_defaults(force=False)
+
+    def _open_exports_folder(self) -> None:
+        self._open_folder(PROJECT_ROOT / "exports")
+
+    def _open_projects_folder(self) -> None:
+        self._open_folder(PROJECT_ROOT / "projects")
+
+    def _open_folder(self, path: Any) -> None:
+        folder = os.fspath(path)
+        os.makedirs(folder, exist_ok=True)
+        if os.name == "nt":
+            os.startfile(folder)
+        else:
+            self._show_error(
+                "error.open_folder_failed",
+                RuntimeError(self.t("error.open_folder_unsupported")),
+            )
 
     def _label(
         self,
@@ -474,9 +1233,14 @@ class AIBookBatchWriterApp(ctk.CTk):
         return "" if value == self.t(placeholder_key) else value
 
     def _replace_text(self, textbox: ctk.CTkTextbox, value: str) -> None:
+        was_disabled = str(textbox._textbox.cget("state")) == "disabled"
+        if was_disabled:
+            textbox.configure(state="normal")
         textbox.delete("1.0", "end")
         textbox.insert("1.0", value)
         textbox.configure(text_color=("gray10", "gray90"))
+        if was_disabled:
+            textbox.configure(state="disabled")
 
     def _change_appearance(self, value: str) -> None:
         ctk.set_appearance_mode(self.appearance_labels[value])
@@ -490,16 +1254,10 @@ class AIBookBatchWriterApp(ctk.CTk):
             return
 
         provider = self._provider_code()
+        global_provider = self._global_provider_code()
         appearance = self.appearance_labels[self.appearance_var.get()]
-        current_tab = self.tabs.get()
-        tab_key = next(
-            (
-                key
-                for key in ("tab.setup", "tab.outline", "tab.book")
-                if self.t(key) == current_tab
-            ),
-            "tab.setup",
-        )
+        current_page = self.current_page
+        current_step = self.current_step
         text_state = self._capture_text_state()
         variable_state = {
             "model": self.model_var.get(),
@@ -514,6 +1272,11 @@ class AIBookBatchWriterApp(ctk.CTk):
             "chapter_count": self.chapter_count_var.get(),
             "words_per_chapter": self.words_per_chapter_var.get(),
             "tokens": self.token_var.get(),
+            "global_model": self.global_model_var.get(),
+            "global_api_key": self.global_api_key_var.get(),
+            "global_api_base": self.global_api_base_var.get(),
+            "global_temperature": self.global_temperature_var.get(),
+            "global_max_tokens": self.global_max_tokens_var.get(),
         }
 
         self.translator.set_language(language)
@@ -525,19 +1288,24 @@ class AIBookBatchWriterApp(ctk.CTk):
         self._recreate_variables(
             variable_state,
             provider=provider,
+            global_provider=global_provider,
             appearance=appearance,
             language=language,
         )
         self._build_ui()
         self._restore_text_state(text_state)
         self._apply_provider_defaults(force=False)
+        self._apply_global_provider_defaults(force=False)
         self._update_token_display()
-        self.tabs.set(self.t(tab_key))
+        self.current_step = current_step
+        self._show_page(current_page, show_warning=False)
+        self._update_maintenance_summary()
 
     def _recreate_variables(
         self,
         state: dict[str, str],
         provider: str,
+        global_provider: str,
         appearance: str,
         language: str,
     ) -> None:
@@ -553,6 +1321,20 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.api_base_var = ctk.StringVar(value=state["api_base"])
         self.temperature_var = ctk.StringVar(value=state["temperature"])
         self.max_tokens_var = ctk.StringVar(value=state["max_tokens"])
+        self.global_provider_var = ctk.StringVar(
+            value=self._provider_label(global_provider)
+        )
+        self.global_model_var = ctk.StringVar(value=state["global_model"])
+        self.global_api_key_var = ctk.StringVar(value=state["global_api_key"])
+        self.global_api_base_var = ctk.StringVar(
+            value=state["global_api_base"]
+        )
+        self.global_temperature_var = ctk.StringVar(
+            value=state["global_temperature"]
+        )
+        self.global_max_tokens_var = ctk.StringVar(
+            value=state["global_max_tokens"]
+        )
         self.title_var = ctk.StringVar(value=state["title"])
         self.output_language_var = ctk.StringVar(value=state["output_language"])
         self.tone_var = ctk.StringVar(value=state["tone"])
@@ -564,6 +1346,19 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.status_var = ctk.StringVar(value=self.t("status.ready"))
         self.task_var = ctk.StringVar(value=self.t("status.ready"))
         self.token_var = ctk.StringVar(value=state["tokens"])
+        self.maintenance_title_var = ctk.StringVar(
+            value=self.t("maintenance.no_project")
+        )
+        self.maintenance_detail_var = ctk.StringVar(
+            value=self.t("maintenance.no_project_detail")
+        )
+        self.global_status_var = ctk.StringVar(
+            value=(
+                self.t("settings.configured")
+                if self.global_configured
+                else self.t("settings.not_configured")
+            )
+        )
         self.language_var = ctk.StringVar(
             value=next(
                 label
@@ -772,6 +1567,12 @@ class AIBookBatchWriterApp(ctk.CTk):
     def _generate_outline(self) -> None:
         if self.is_busy:
             return
+        if self._project_is_locked():
+            messagebox.showwarning(
+                self.t("dialog.information_title"),
+                self.t("message.outline_locked"),
+            )
+            return
         try:
             llm_settings = self._llm_settings_from_form()
             book_settings = self._book_settings_from_form()
@@ -812,6 +1613,9 @@ class AIBookBatchWriterApp(ctk.CTk):
             return
 
         self.cancel_token = CancelToken()
+        self.book_generation_started = True
+        self.current_step = 3
+        self._show_page("create", show_warning=False)
         self.progress_bar.set(0)
         self.status_var.set(self.t("status.generating_book"))
         self.task_var.set(self.t("status.generating_book"))
@@ -888,7 +1692,8 @@ class AIBookBatchWriterApp(ctk.CTk):
                 self.outline_text,
                 self._editable_outline_json(outline),
             )
-            self.tabs.set(self.t("tab.outline"))
+            self.current_step = 2
+            self._show_page("create", show_warning=False)
             self.status_var.set(self.t("status.outline_ready"))
             self.task_var.set(self.t("status.outline_ready"))
             self._append_log(
@@ -903,7 +1708,9 @@ class AIBookBatchWriterApp(ctk.CTk):
         else:
             self.project = result
             self._replace_text(self.preview_text, render_markdown(self.project))
-            self.tabs.set(self.t("tab.book"))
+            self.book_generation_started = True
+            self.current_step = 3
+            self._show_page("create", show_warning=False)
             self.progress_bar.set(1)
             has_failures = any(
                 chapter.status == "failed" for chapter in self.project.chapters
@@ -916,12 +1723,16 @@ class AIBookBatchWriterApp(ctk.CTk):
             self.status_var.set(self.t(status_key))
             self.task_var.set(self.t(status_key))
             self._update_token_display()
+        self._update_maintenance_summary()
+        self._refresh_flow_ui()
 
     def _handle_cancelled(self) -> None:
         self._set_busy(False)
         self.status_var.set(self.t("status.cancelled"))
         self.task_var.set(self.t("status.cancelled"))
         self._append_log(self.t("status.cancelled"))
+        self._update_maintenance_summary()
+        self._refresh_flow_ui()
 
     def _handle_worker_error(self, operation: str, error: Exception) -> None:
         self._set_busy(False)
@@ -934,6 +1745,8 @@ class AIBookBatchWriterApp(ctk.CTk):
             else "error.invalid_settings"
         )
         self._show_error(key, error)
+        self._update_maintenance_summary()
+        self._refresh_flow_ui()
 
     def _cancel_generation(self) -> None:
         if not self.is_busy:
@@ -946,13 +1759,12 @@ class AIBookBatchWriterApp(ctk.CTk):
     def _set_busy(self, busy: bool) -> None:
         self.is_busy = busy
         active_state = "disabled" if busy else "normal"
-        for key, button in self.action_buttons.items():
-            if key != "button.cancel":
-                button.configure(state=active_state)
-        self.action_buttons["button.cancel"].configure(
-            state="normal" if busy else "disabled"
-        )
+        for button in self.busy_sensitive_buttons:
+            button.configure(state=active_state)
+        for button in self.cancel_buttons:
+            button.configure(state="normal" if busy else "disabled")
         self.language_menu.configure(state="disabled" if busy else "normal")
+        self._refresh_flow_ui()
 
     def _update_token_display(self) -> None:
         total = self.project.token_usage.total_tokens if self.project else 0
@@ -982,6 +1794,7 @@ class AIBookBatchWriterApp(ctk.CTk):
             save_project(project, path)
             self.status_var.set(self.t("status.project_saved"))
             self._append_log(self.t("log.project_saved", path=path))
+            self._update_maintenance_summary()
             messagebox.showinfo(
                 self.t("dialog.information_title"),
                 self.t("message.project_saved"),
@@ -1003,6 +1816,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         try:
             project = load_project(path)
             self.project = project
+            self.book_generation_started = self._project_is_locked()
             self._populate_project(project)
             self.status_var.set(self.t("status.project_loaded"))
             self.task_var.set(self.t("status.project_loaded"))
@@ -1042,7 +1856,14 @@ class AIBookBatchWriterApp(ctk.CTk):
             self.api_base_var.set(project.llm_settings.api_base or "")
             self.temperature_var.set(str(project.llm_settings.temperature))
             self.max_tokens_var.set(str(project.llm_settings.max_tokens))
-        self.api_key_var.set("")
+            global_provider = self._global_provider_code()
+            self.api_key_var.set(
+                self.global_api_key_var.get()
+                if project.llm_settings.provider == global_provider
+                else ""
+            )
+        else:
+            self._apply_global_to_project_form()
         self._apply_provider_defaults(force=False)
 
         outline = BookOutline(
@@ -1053,9 +1874,17 @@ class AIBookBatchWriterApp(ctk.CTk):
         self._replace_text(self.outline_text, self._editable_outline_json(outline))
         self._replace_text(self.preview_text, render_markdown(project))
         self._update_token_display()
-        self.tabs.set(self.t("tab.outline"))
+        self.current_step = 3 if self._project_is_locked() else 2
+        self._show_page("create", show_warning=False)
+        self._update_maintenance_summary()
 
     def _export(self, format_name: str) -> None:
+        if not self.project:
+            messagebox.showwarning(
+                self.t("dialog.information_title"),
+                self.t("error.no_project"),
+            )
+            return
         try:
             project = self._sync_project_from_ui(require_api_key=False)
         except (ValueError, ValidationError) as exc:
@@ -1143,15 +1972,11 @@ class AIBookBatchWriterApp(ctk.CTk):
             if not should_close:
                 return
             self.cancel_token.cancel()
-        self.settings_store.save(
-            {
-                "language": self.translator.language,
-                "appearance": self.appearance_labels[self.appearance_var.get()],
-                "provider": self._provider_code(),
-                "model": self.model_var.get(),
-                "api_base": self.api_base_var.get(),
-            }
-        )
+        updates: dict[str, Any] = {
+            "language": self.translator.language,
+            "appearance": self.appearance_labels[self.appearance_var.get()],
+        }
+        self.settings_store.save_merged(updates)
         self.destroy()
 
 

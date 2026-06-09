@@ -26,13 +26,37 @@ class SettingsStore:
             return {}
 
     def save(self, settings: dict[str, Any]) -> None:
-        safe = {
-            key: value
-            for key, value in settings.items()
-            if "key" not in key.lower() and "secret" not in key.lower()
-        }
+        safe = self._remove_secrets(settings)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("w", encoding="utf-8") as handle:
             json.dump(safe, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
 
+    def save_merged(self, updates: dict[str, Any]) -> dict[str, Any]:
+        """Merge and persist preference updates, returning the stored data."""
+        settings = self.load()
+        settings.update(updates)
+        self.save(settings)
+        return self._remove_secrets(settings)
+
+    @classmethod
+    def _remove_secrets(cls, value: Any) -> Any:
+        """Recursively remove fields that look like credentials."""
+        if isinstance(value, dict):
+            return {
+                key: cls._remove_secrets(item)
+                for key, item in value.items()
+                if not cls._is_secret_key(key)
+            }
+        if isinstance(value, list):
+            return [cls._remove_secrets(item) for item in value]
+        return value
+
+    @staticmethod
+    def _is_secret_key(key: str) -> bool:
+        normalized = key.lower().replace("-", "_")
+        return (
+            "api_key" in normalized
+            or "secret" in normalized
+            or normalized in {"token", "access_token", "auth_token", "password"}
+        )

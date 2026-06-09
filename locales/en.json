@@ -8,8 +8,54 @@
     "outline": "Outline Editor",
     "book": "Book Preview & Logs"
   },
+  "home": {
+    "title": "What would you like to do?",
+    "subtitle": "Choose an area to start or continue your work.",
+    "navigation_hint": "Create, manage and export long-form AI writing projects.",
+    "create_title": "Create Books",
+    "create_description": "Start a guided book project, generate its outline and write it chapter by chapter.",
+    "maintenance_title": "Book Maintenance",
+    "maintenance_description": "Load an existing project, review its progress and continue working on it.",
+    "settings_title": "Global Settings",
+    "settings_description": "Choose the default AI provider and model used by new book projects.",
+    "utilities_title": "Other Utilities",
+    "utilities_description": "Export the current project or open the project and export folders."
+  },
+  "navigation": {
+    "maintenance": "Book Maintenance",
+    "settings": "Global Settings",
+    "utilities": "Other Utilities"
+  },
+  "wizard": {
+    "step_1": "1  Book Setup",
+    "step_2": "2  Review Outline",
+    "step_3": "3  Generate & Export",
+    "override_hint": "Global model settings are preloaded. Changes here apply only to this book.",
+    "book_locked_hint": "The outline is locked after book generation starts."
+  },
+  "maintenance": {
+    "title": "Book Maintenance",
+    "description": "Open a saved JSON project and continue from its current stage.",
+    "current_project": "Current project",
+    "no_project": "No project loaded",
+    "no_project_detail": "Load a project to see its chapters, progress and token usage.",
+    "project_detail": "{completed} of {chapters} chapters completed · {tokens} tokens"
+  },
+  "settings": {
+    "title": "Global Settings",
+    "description": "These defaults are preloaded whenever you create a new book.",
+    "configured": "Global model settings configured",
+    "not_configured": "Global model settings have not been saved yet",
+    "security_note": "API keys entered here are kept only for the current session. They are never written to settings or project files."
+  },
+  "utilities": {
+    "title": "Other Utilities",
+    "description": "Quick access to project exports and working folders."
+  },
   "panel": {
     "model_settings": "Model Settings",
+    "project_model_settings": "Model Settings for This Book",
+    "global_model_settings": "Default Model Settings",
     "book_settings": "Book Settings",
     "outline_editor": "Editable Outline JSON",
     "result_preview": "Generated Content Preview",
@@ -23,6 +69,9 @@
     "ollama": "Ollama"
   },
   "button": {
+    "home": "⌂ Home",
+    "back_home": "← Home",
+    "open": "Open",
     "generate_outline": "Generate Outline",
     "generate_book": "Generate Book",
     "cancel": "Cancel",
@@ -31,7 +80,12 @@
     "export_markdown": "Export Markdown",
     "export_txt": "Export TXT",
     "export_docx": "Export DOCX",
-    "clear_log": "Clear Log"
+    "clear_log": "Clear Log",
+    "back_to_setup": "← Book Setup",
+    "continue_project": "Continue Project",
+    "save_global_settings": "Save Global Settings",
+    "open_exports_folder": "Open Exports Folder",
+    "open_projects_folder": "Open Projects Folder"
   },
   "label": {
     "provider": "Provider",
@@ -128,12 +182,18 @@
     "docx_files": "Word documents",
     "all_files": "All files",
     "confirm_close_title": "Generation in progress",
-    "confirm_close": "Generation is still running. Cancel it and close the application?"
+    "confirm_close": "Generation is still running. Cancel it and close the application?",
+    "global_settings_title": "Global model settings",
+    "new_project_title": "Start a new book",
+    "new_project_confirm": "The current in-memory project will be replaced. Continue?"
   },
   "message": {
     "project_saved": "The project was saved successfully.",
     "project_loaded": "The project was loaded successfully.",
-    "export_completed": "The export completed successfully."
+    "export_completed": "The export completed successfully.",
+    "global_settings_missing": "No global model settings have been saved yet. You can continue with the displayed defaults or configure them from Global Settings.",
+    "global_settings_saved": "Global model settings were saved. New book projects will preload them.",
+    "outline_locked": "The outline cannot be regenerated after book generation has started."
   },
   "error": {
     "missing_api_key": "An API key is required for {provider}. Enter one for this session or set {env_var} in .env.",
@@ -145,6 +205,8 @@
     "export_failed": "The export could not be completed.\n\n{error}",
     "no_project": "Generate or load an outline before using this action.",
     "no_chapters": "The project does not contain any chapters.",
-    "busy": "Please wait for the current operation to finish."
+    "busy": "Please wait for the current operation to finish.",
+    "open_folder_failed": "The folder could not be opened.\n\n{error}",
+    "open_folder_unsupported": "Opening folders is not supported on this platform."
   }
 }

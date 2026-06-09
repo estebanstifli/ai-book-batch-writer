@@ -14,13 +14,16 @@ export formats.
 Application screenshots will be added under [`screenshots/`](screenshots/) as
 the interface evolves.
 
-| Project setup | Outline review | Book generation |
+| Home dashboard | Guided creation | Book maintenance |
 | --- | --- | --- |
-| Model and writing settings | Editable validated JSON | Preview, progress and logs |
+| Large task cards | Locked 1 → 2 → 3 workflow | Load, review and continue projects |
 
 ## Features
 
 - Outline-first writing workflow with a human review step
+- Dashboard with Create Books, Book Maintenance, Global Settings and Utilities
+- Guided 1 → 2 → 3 creation flow that locks the outline after writing starts
+- Reusable global model defaults with per-book overrides
 - OpenAI, OpenRouter, Anthropic Claude, Google Gemini and local Ollama
   providers through dedicated LangChain integrations
 - Real LangChain prompt templates, chat model abstraction and invocation chains
@@ -63,7 +66,7 @@ calls, global state and UI updates in one file.
 
 ```text
 src/ai_book_batch_writer/
-├─ app.py                 # CustomTkinter UI and worker queue
+├─ app.py                 # Dashboard, guided workflow and worker queue
 ├─ models.py              # Pydantic domain models
 ├─ llm_providers.py       # Multi-provider LangChain factory
 ├─ generation_service.py  # Outline and long-form orchestration
@@ -153,14 +156,18 @@ install Ollama and download their chosen model separately.
 
 ## Workflow
 
-1. Choose a cloud provider or Ollama and configure the model.
-2. Describe the book, guide, manual, tutorial or structured article.
-3. Select **Generate Outline**.
-4. Review and edit the generated JSON outline.
-5. Select **Generate Book**.
-6. Monitor each chapter or section in the progress log.
-7. Review the persisted outline, book and total token counts.
+1. Save reusable provider and model defaults under **Global Settings**.
+2. Choose **Create Books** from the dashboard.
+3. Adjust the preloaded model settings for this book when needed.
+4. Describe the book, guide, manual, tutorial or structured article.
+5. Generate, review and edit the JSON outline.
+6. Start book generation. The setup and outline steps are then locked to keep
+   generated content consistent with its structure.
+7. Monitor each chapter or section in the progress log.
 8. Save the project or export it to Markdown, TXT or DOCX.
+
+Saved projects can be reopened from **Book Maintenance**. Export commands and
+working-folder shortcuts are also available under **Other Utilities**.
 
 ## Export Formats
 
@@ -216,7 +223,8 @@ keys fall back to English.
 
 - Never commit `.env` or real credentials.
 - Project JSON files and preference files omit API keys.
-- UI-entered credentials are session-only.
+- UI-entered credentials, including keys entered in Global Settings, are
+  session-only.
 - Revoke a key immediately if it is ever exposed in source code, logs,
   screenshots or commit history.
 - Review exported content before sharing it; generated text can contain
