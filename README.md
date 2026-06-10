@@ -27,6 +27,10 @@ the interface evolves.
 - Provider connection tests for cloud credentials and local Ollama
 - Editable model dropdowns populated from each provider's live catalog
 - Local JSON model cache for fast startup and offline reuse
+- Friendly multi-field validation without exposing internal exceptions
+- Editable output-language selector backed by 693 Unicode CLDR entries
+- Modal generation progress with cancellation and live chapter status
+- Automatic project save plus Markdown, TXT, DOCX and PDF exports
 - OpenAI, OpenRouter, Anthropic Claude, Google Gemini and local Ollama
   providers through dedicated LangChain integrations
 - Real LangChain prompt templates, chat model abstraction and invocation chains
@@ -61,6 +65,7 @@ calls, global state and UI updates in one file.
 - Pydantic 2
 - python-dotenv
 - python-docx
+- ReportLab
 - tenacity
 - pytest
 - PyInstaller
@@ -89,6 +94,10 @@ generation services remain provider-independent.
 Model discovery uses each provider's official REST catalog. Refreshed model
 identifiers are stored under the user's application data directory in
 `model_cache.json`; the cache contains model names and timestamps only.
+
+The output-language selector is backed by the Unicode CLDR language catalog
+and remains editable for custom names or language variants. The bundled source
+and attribution are documented in [`data/README.md`](data/README.md).
 
 ## Install From Source
 
@@ -174,8 +183,9 @@ install Ollama and download their chosen model separately.
 5. Generate, review and edit the JSON outline.
 6. Start book generation. The setup and outline steps are then locked to keep
    generated content consistent with its structure.
-7. Monitor each chapter or section in the progress log.
-8. Save the project or export it to Markdown, TXT or DOCX.
+7. Monitor each chapter or section in the modal progress window and log.
+8. When generation finishes, the project and every export format are saved
+   automatically in a dedicated project folder.
 
 Saved projects can be reopened from **Book Maintenance**. Export commands and
 working-folder shortcuts are also available under **Other Utilities**.
@@ -186,6 +196,22 @@ working-folder shortcuts are also available under **Other Utilities**.
 - **Markdown:** metadata, linked table of contents, chapters and sections
 - **TXT:** portable plain text
 - **DOCX:** Word document with title, chapter and section heading levels
+- **PDF:** clean A4 reading/printing document without project metadata
+
+Automatic completion creates:
+
+```text
+projects/<timestamp>-<book-title>/
+├─ project.json
+├─ book.md
+├─ book.txt
+├─ book.docx
+└─ book.pdf
+```
+
+When running the Windows executable, these folders are created under
+`Documents\AI Book Batch Writer\Projects` so they remain available after the
+one-file application exits.
 
 ## Build a Windows Executable
 
@@ -237,6 +263,7 @@ keys fall back to English.
 - UI-entered credentials, including keys entered in Global Settings, are
   session-only.
 - The model catalog cache never stores credentials or request headers.
+- Automatic project JSON files exclude API keys.
 - Revoke a key immediately if it is ever exposed in source code, logs,
   screenshots or commit history.
 - Review exported content before sharing it; generated text can contain

@@ -7,22 +7,35 @@ import os
 import queue
 import threading
 from datetime import datetime
+from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any, Callable
 
 import customtkinter as ctk
 from pydantic import ValidationError
 
-from ai_book_batch_writer.config import PROJECT_ROOT, load_environment
+from ai_book_batch_writer.config import (
+    exports_directory,
+    load_environment,
+    projects_directory,
+)
 from ai_book_batch_writer.exporters import (
     export_docx,
     export_markdown,
+    export_pdf,
+    export_project_bundle,
     export_txt,
     render_markdown,
 )
 from ai_book_batch_writer.generation_service import BookGenerationService
 from ai_book_batch_writer.i18n import Translator
+from ai_book_batch_writer.input_validation import (
+    InputValidationError,
+    validate_book_input,
+    validate_llm_input,
+)
 from ai_book_batch_writer.json_utils import parse_outline_document
+from ai_book_batch_writer.language_catalog import load_output_languages
 from ai_book_batch_writer.llm_providers import (
     PROVIDER_SPECS,
     get_provider_spec,
@@ -46,7 +59,11 @@ from ai_book_batch_writer.provider_discovery import (
     test_provider_connection,
 )
 from ai_book_batch_writer.settings_store import SettingsStore
-from ai_book_batch_writer.utils import CancelToken, GenerationCancelled
+from ai_book_batch_writer.utils import (
+    CancelToken,
+    GenerationCancelled,
+    create_project_directory,
+)
 
 WorkerFunction = Callable[[], Any]
 
@@ -58,6 +75,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         load_environment()
         self.settings_store = SettingsStore()
         self.model_catalog_store = ModelCatalogStore()
+        self.output_languages = load_output_languages()
         self.preferences = self.settings_store.load()
         self.translator = Translator(self.preferences.get("language", "en"))
         self._refresh_locale_maps()
@@ -71,10 +89,17 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.current_page = "home"
         self.current_step = 1
         self.book_generation_started = False
+        self.book_generation_finished = False
+        self.auto_export_completed = False
+        self.project_file_path: Path | None = None
+        self.project_output_dir: Path | None = None
         self.cancel_token = CancelToken()
         self.worker_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: threading.Thread | None = None
         self.is_busy = False
+        self.progress_dialog: ctk.CTkToplevel | None = None
+        self.progress_dialog_bar: ctk.CTkProgressBar | None = None
+        self.progress_dialog_message = ctk.StringVar(value="")
 
         self.title(self.t("app.title"))
         self.geometry("1420x900")
@@ -566,11 +591,19 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.idea_text = ctk.CTkTextbox(book_panel, height=120)
         self.idea_text.grid(row=1, column=1, padx=10, pady=8, sticky="ew")
         self._set_placeholder(self.idea_text, "placeholder.main_idea")
-        self._entry(
+        self._label(book_panel, 2, "label.output_language")
+        self.output_language_combo = ctk.CTkComboBox(
             book_panel,
-            2,
-            "label.output_language",
-            self.output_language_var,
+            values=self.output_languages,
+            variable=self.output_language_var,
+            state="normal",
+        )
+        self.output_language_combo.grid(
+            row=2,
+            column=1,
+            padx=10,
+            pady=8,
+            sticky="ew",
         )
         self._entry(book_panel, 3, "label.tone", self.tone_var)
         self._entry(book_panel, 4, "label.target_audience", self.audience_var)
@@ -735,6 +768,7 @@ class AIBookBatchWriterApp(ctk.CTk):
             text_color=("gray35", "gray70"),
         ).pack(side="left")
         for key, command in (
+            ("button.export_pdf", lambda: self._export("pdf")),
             ("button.export_docx", lambda: self._export("docx")),
             ("button.export_txt", lambda: self._export("txt")),
             ("button.export_markdown", lambda: self._export("md")),
@@ -939,6 +973,7 @@ class AIBookBatchWriterApp(ctk.CTk):
             ("⬇", "button.export_markdown", lambda: self._export("md")),
             ("T", "button.export_txt", lambda: self._export("txt")),
             ("W", "button.export_docx", lambda: self._export("docx")),
+            ("P", "button.export_pdf", lambda: self._export("pdf")),
             ("▣", "button.open_exports_folder", self._open_exports_folder),
             ("▤", "button.open_projects_folder", self._open_projects_folder),
         ]
@@ -1059,7 +1094,7 @@ class AIBookBatchWriterApp(ctk.CTk):
                 ).pack(side="left", padx=8)
             button = ctk.CTkButton(
                 stepper,
-                text=self.t(f"wizard.step_{step}"),
+                text=self._step_label(step),
                 command=lambda selected=step: self._show_create_step(selected),
                 width=190,
                 height=38,
@@ -1096,12 +1131,19 @@ class AIBookBatchWriterApp(ctk.CTk):
         has_outline = self._project_has_outline()
         locked = self._project_is_locked()
         for step, button in self.step_buttons.items():
+            button.configure(text=self._step_label(step))
             enabled = (
                 (step == 1 and not locked)
                 or (step == 2 and has_outline and not locked)
                 or (step == 3 and locked)
             )
-            if step == self.current_step:
+            if step == 3 and self.book_generation_finished:
+                button.configure(
+                    state="disabled",
+                    fg_color=("gray70", "gray25"),
+                    hover_color=("gray70", "gray25"),
+                )
+            elif step == self.current_step:
                 button.configure(
                     state="normal",
                     fg_color=("#1f6aa5", "#1f6aa5"),
@@ -1117,6 +1159,18 @@ class AIBookBatchWriterApp(ctk.CTk):
             state="disabled" if locked or self.is_busy else "normal"
         )
         self.outline_text.configure(state="disabled" if locked else "normal")
+
+    def _step_label(self, step: int) -> str:
+        if step != 3:
+            return self.t(f"wizard.step_{step}")
+        if self.book_generation_finished:
+            key = (
+                "wizard.step_3_completed"
+                if self.auto_export_completed
+                else "wizard.step_3_finished"
+            )
+            return self.t(key)
+        return self.t("wizard.step_3")
 
     def _project_has_outline(self) -> bool:
         return bool(self.project and self.project.chapters)
@@ -1135,6 +1189,24 @@ class AIBookBatchWriterApp(ctk.CTk):
             for chapter in self.project.chapters
         )
 
+    def _project_is_finished(self) -> bool:
+        if self.book_generation_finished:
+            return True
+        if not self.project or not self.project.chapters:
+            return False
+        return (
+            all(
+                chapter.status in {"completed", "failed"}
+                for chapter in self.project.chapters
+            )
+            and any(
+                chapter.content
+                or chapter.status == "completed"
+                or any(section.content for section in chapter.sections)
+                for chapter in self.project.chapters
+            )
+        )
+
     def _start_new_book(self) -> None:
         if self.project and not messagebox.askyesno(
             self.t("dialog.new_project_title"),
@@ -1143,6 +1215,10 @@ class AIBookBatchWriterApp(ctk.CTk):
             return
         self.project = None
         self.book_generation_started = False
+        self.book_generation_finished = False
+        self.auto_export_completed = False
+        self.project_file_path = None
+        self.project_output_dir = None
         self.current_step = 1
         self._apply_global_to_project_form()
         self.title_var.set("")
@@ -1245,35 +1321,38 @@ class AIBookBatchWriterApp(ctk.CTk):
 
     def _global_llm_settings_from_form(self) -> LLMSettings:
         provider = self._global_provider_code()
+        api_key = self.global_api_key_var.get().strip() or None
+        validated = validate_llm_input(
+            model=self.global_model_var.get(),
+            api_base=self.global_api_base_var.get(),
+            temperature=self.global_temperature_var.get(),
+            max_tokens=self.global_max_tokens_var.get(),
+            api_key_required=provider_requires_api_key(provider),
+            api_key_available=self._api_key_available(provider, api_key),
+            api_base_required=provider_supports_api_base(provider),
+        )
         return LLMSettings(
             provider=provider,
-            model=self.global_model_var.get(),
-            api_key=self.global_api_key_var.get().strip() or None,
-            api_base=(
-                self.global_api_base_var.get()
-                if provider_supports_api_base(provider)
-                else None
-            ),
-            temperature=float(self.global_temperature_var.get()),
-            max_tokens=int(self.global_max_tokens_var.get()),
+            model=validated.model,
+            api_key=api_key,
+            api_base=validated.api_base,
+            temperature=validated.temperature,
+            max_tokens=validated.max_tokens,
         )
 
     def _settings_for_scope(self, scope: str) -> LLMSettings:
         if scope == "project":
             return self._llm_settings_from_form()
-        settings = self._global_llm_settings_from_form()
-        if (
-            provider_requires_api_key(settings.provider)
-            and not provider_api_key(settings)
-        ):
-            raise ValueError(
-                self.t(
-                    "error.missing_api_key",
-                    provider=self.global_provider_var.get(),
-                    env_var=provider_key_env_display(settings.provider),
-                )
-            )
-        return settings
+        return self._global_llm_settings_from_form()
+
+    @staticmethod
+    def _api_key_available(provider: str, entered_key: str | None) -> bool:
+        if entered_key:
+            return True
+        return any(
+            os.getenv(name)
+            for name in get_provider_spec(provider).api_key_env_vars
+        )
 
     def _test_connection(self, scope: str) -> None:
         if self.is_busy:
@@ -1342,10 +1421,10 @@ class AIBookBatchWriterApp(ctk.CTk):
         self._apply_provider_defaults(force=False)
 
     def _open_exports_folder(self) -> None:
-        self._open_folder(PROJECT_ROOT / "exports")
+        self._open_folder(exports_directory())
 
     def _open_projects_folder(self) -> None:
-        self._open_folder(PROJECT_ROOT / "projects")
+        self._open_folder(projects_directory())
 
     def _open_folder(self, path: Any) -> None:
         folder = os.fspath(path)
@@ -1638,41 +1717,46 @@ class AIBookBatchWriterApp(ctk.CTk):
         require_api_key: bool = True,
     ) -> LLMSettings:
         provider = self._provider_code()
+        api_key = self.api_key_var.get().strip() or None
+        validated = validate_llm_input(
+            model=self.model_var.get(),
+            api_base=self.api_base_var.get(),
+            temperature=self.temperature_var.get(),
+            max_tokens=self.max_tokens_var.get(),
+            api_key_required=(
+                require_api_key and provider_requires_api_key(provider)
+            ),
+            api_key_available=self._api_key_available(provider, api_key),
+            api_base_required=provider_supports_api_base(provider),
+        )
         settings = LLMSettings(
             provider=provider,
-            model=self.model_var.get(),
-            api_key=self.api_key_var.get().strip() or None,
-            api_base=(
-                self.api_base_var.get()
-                if provider_supports_api_base(provider)
-                else None
-            ),
-            temperature=float(self.temperature_var.get()),
-            max_tokens=int(self.max_tokens_var.get()),
+            model=validated.model,
+            api_key=api_key,
+            api_base=validated.api_base,
+            temperature=validated.temperature,
+            max_tokens=validated.max_tokens,
         )
-        if (
-            require_api_key
-            and provider_requires_api_key(provider)
-            and not provider_api_key(settings)
-        ):
-            raise ValueError(
-                self.t(
-                    "error.missing_api_key",
-                    provider=self.provider_var.get(),
-                    env_var=provider_key_env_display(provider),
-                )
-            )
         return settings
 
     def _book_settings_from_form(self) -> BookSettings:
-        return BookSettings(
-            title=self.title_var.get(),
-            idea=self._textbox_value(self.idea_text, "placeholder.main_idea"),
+        idea = self._textbox_value(self.idea_text, "placeholder.main_idea")
+        validated = validate_book_input(
+            idea=idea,
             output_language=self.output_language_var.get(),
             tone=self.tone_var.get(),
             target_audience=self.audience_var.get(),
-            chapter_count=int(self.chapter_count_var.get()),
-            words_per_chapter=int(self.words_per_chapter_var.get()),
+            chapter_count=self.chapter_count_var.get(),
+            words_per_chapter=self.words_per_chapter_var.get(),
+        )
+        return BookSettings(
+            title=self.title_var.get(),
+            idea=validated.idea,
+            output_language=validated.output_language,
+            tone=validated.tone,
+            target_audience=validated.target_audience,
+            chapter_count=validated.chapter_count,
+            words_per_chapter=validated.words_per_chapter,
             additional_instructions=self._textbox_value(
                 self.instructions_text,
                 "placeholder.additional_instructions",
@@ -1801,21 +1885,43 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.progress_bar.set(0)
         self.status_var.set(self.t("status.generating_book"))
         self.task_var.set(self.t("status.generating_book"))
+        existing_output_dir = self.project_output_dir
 
         def progress(event: GenerationEvent) -> None:
             self.worker_queue.put(("progress", event))
 
-        def work() -> BookProject:
+        def work() -> tuple[
+            BookProject,
+            Path,
+            dict[str, Path] | None,
+            Exception | None,
+        ]:
             service = BookGenerationService(project.llm_settings)
-            return service.generate_book(
+            generated_project = service.generate_book(
                 project,
                 progress_callback=progress,
                 cancel_token=self.cancel_token,
             )
+            self.worker_queue.put(("worker_status", "status.saving_outputs"))
+            output_dir = existing_output_dir or create_project_directory(
+                projects_directory(),
+                generated_project.settings.title
+                or self.t("default.untitled_book"),
+                generated_project.created_at,
+            )
+            try:
+                paths = export_project_bundle(generated_project, output_dir)
+                export_error: Exception | None = None
+            except Exception as exc:
+                paths = None
+                export_error = exc
+            return generated_project, output_dir, paths, export_error
 
         self._start_worker("book", work)
 
     def _start_worker(self, operation: str, function: WorkerFunction) -> None:
+        if operation in {"outline", "book"}:
+            self._open_progress_dialog(operation)
         self._set_busy(True)
 
         def runner() -> None:
@@ -1836,6 +1942,8 @@ class AIBookBatchWriterApp(ctk.CTk):
                 kind, payload = self.worker_queue.get_nowait()
                 if kind == "progress":
                     self._handle_progress(payload)
+                elif kind == "worker_status":
+                    self._handle_worker_status(payload)
                 elif kind == "success":
                     self._handle_success(*payload)
                 elif kind == "cancelled":
@@ -1850,12 +1958,22 @@ class AIBookBatchWriterApp(ctk.CTk):
         message = self.t(event.message_key, **event.params)
         self.task_var.set(message)
         self.progress_bar.set(event.fraction)
+        self.progress_dialog_message.set(message)
+        if self.progress_dialog_bar is not None:
+            self.progress_dialog_bar.stop()
+            self.progress_dialog_bar.set(event.fraction)
         total_tokens = event.params.get("total_tokens")
         if isinstance(total_tokens, int):
             self.token_var.set(f"{total_tokens:,}")
         self._append_log(message)
 
+    def _handle_worker_status(self, message_key: str) -> None:
+        message = self.t(message_key)
+        self.task_var.set(message)
+        self.progress_dialog_message.set(message)
+
     def _handle_success(self, operation: str, result: Any) -> None:
+        self._close_progress_dialog()
         self._set_busy(False)
         if operation.startswith("connection:"):
             provider = str(result)
@@ -1926,9 +2044,14 @@ class AIBookBatchWriterApp(ctk.CTk):
             )
             self._update_token_display()
         else:
-            self.project = result
+            project, output_dir, paths, export_error = result
+            self.project = project
+            self.project_output_dir = output_dir
+            self.project_file_path = output_dir / "project.json"
             self._replace_text(self.preview_text, render_markdown(self.project))
             self.book_generation_started = True
+            self.book_generation_finished = True
+            self.auto_export_completed = export_error is None
             self.current_step = 3
             self._show_page("create", show_warning=False)
             self.progress_bar.set(1)
@@ -1943,10 +2066,31 @@ class AIBookBatchWriterApp(ctk.CTk):
             self.status_var.set(self.t(status_key))
             self.task_var.set(self.t(status_key))
             self._update_token_display()
+            if export_error is None and paths is not None:
+                self._append_log(
+                    self.t("log.auto_exported", path=output_dir)
+                )
+                messagebox.showinfo(
+                    self.t("dialog.information_title"),
+                    self.t("message.auto_exported", path=output_dir),
+                )
+            else:
+                self._append_log(
+                    self.t("log.auto_export_failed", error=str(export_error))
+                )
+                messagebox.showwarning(
+                    self.t("dialog.information_title"),
+                    self.t(
+                        "error.auto_export_failed",
+                        path=output_dir,
+                        error=str(export_error),
+                    ),
+                )
         self._update_maintenance_summary()
         self._refresh_flow_ui()
 
     def _handle_cancelled(self) -> None:
+        self._close_progress_dialog()
         self._set_busy(False)
         self.status_var.set(self.t("status.cancelled"))
         self.task_var.set(self.t("status.cancelled"))
@@ -1955,6 +2099,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         self._refresh_flow_ui()
 
     def _handle_worker_error(self, operation: str, error: Exception) -> None:
+        self._close_progress_dialog()
         self._set_busy(False)
         self.status_var.set(self.t("status.failed"))
         self.task_var.set(self.t("status.failed"))
@@ -1982,7 +2127,72 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.cancel_token.cancel()
         self.status_var.set(self.t("status.cancelling"))
         self.task_var.set(self.t("status.cancelling"))
+        self.progress_dialog_message.set(self.t("status.cancelling"))
         self._append_log(self.t("log.cancel_requested"))
+
+    def _open_progress_dialog(self, operation: str) -> None:
+        self._close_progress_dialog()
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(self.t("dialog.generation_progress"))
+        dialog.geometry("500x220")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.protocol("WM_DELETE_WINDOW", self._cancel_generation)
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.grid_rowconfigure(0, weight=1)
+
+        card = ctk.CTkFrame(dialog, corner_radius=16)
+        card.grid(row=0, column=0, padx=22, pady=22, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        title_key = (
+            "status.generating_outline"
+            if operation == "outline"
+            else "status.generating_book"
+        )
+        self.progress_dialog_message.set(self.t(title_key))
+        ctk.CTkLabel(
+            card,
+            text=self.t("dialog.please_wait"),
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).grid(row=0, column=0, padx=20, pady=(24, 8))
+        ctk.CTkLabel(
+            card,
+            textvariable=self.progress_dialog_message,
+            wraplength=420,
+            text_color=("gray35", "gray70"),
+        ).grid(row=1, column=0, padx=20, pady=8)
+        bar = ctk.CTkProgressBar(
+            card,
+            mode="indeterminate" if operation == "outline" else "determinate",
+        )
+        bar.grid(row=2, column=0, padx=28, pady=16, sticky="ew")
+        if operation == "outline":
+            bar.start()
+        else:
+            bar.set(0)
+        ctk.CTkButton(
+            card,
+            text=self.t("button.cancel"),
+            command=self._cancel_generation,
+            width=120,
+        ).grid(row=3, column=0, padx=20, pady=(4, 22))
+
+        self.progress_dialog = dialog
+        self.progress_dialog_bar = bar
+        dialog.grab_set()
+        dialog.lift()
+
+    def _close_progress_dialog(self) -> None:
+        if self.progress_dialog_bar is not None:
+            self.progress_dialog_bar.stop()
+        if self.progress_dialog is not None and self.progress_dialog.winfo_exists():
+            try:
+                self.progress_dialog.grab_release()
+            except Exception:
+                pass
+            self.progress_dialog.destroy()
+        self.progress_dialog = None
+        self.progress_dialog_bar = None
 
     def _set_busy(self, busy: bool) -> None:
         self.is_busy = busy
@@ -2009,7 +2219,7 @@ class AIBookBatchWriterApp(ctk.CTk):
             return
         path = filedialog.asksaveasfilename(
             title=self.t("dialog.save_project"),
-            initialdir=PROJECT_ROOT / "projects",
+            initialdir=projects_directory(),
             defaultextension=".json",
             filetypes=[
                 (self.t("dialog.json_files"), "*.json"),
@@ -2020,6 +2230,10 @@ class AIBookBatchWriterApp(ctk.CTk):
             return
         try:
             save_project(project, path)
+            self.project_file_path = Path(path)
+            self.project_output_dir = self._output_directory_for_project_file(
+                self.project_file_path
+            )
             self.status_var.set(self.t("status.project_saved"))
             self._append_log(self.t("log.project_saved", path=path))
             self._update_maintenance_summary()
@@ -2033,7 +2247,7 @@ class AIBookBatchWriterApp(ctk.CTk):
     def _load_project(self) -> None:
         path = filedialog.askopenfilename(
             title=self.t("dialog.load_project"),
-            initialdir=PROJECT_ROOT / "projects",
+            initialdir=projects_directory(),
             filetypes=[
                 (self.t("dialog.json_files"), "*.json"),
                 (self.t("dialog.all_files"), "*.*"),
@@ -2044,7 +2258,17 @@ class AIBookBatchWriterApp(ctk.CTk):
         try:
             project = load_project(path)
             self.project = project
+            self.project_file_path = Path(path)
+            self.project_output_dir = self._output_directory_for_project_file(
+                self.project_file_path
+            )
+            self.book_generation_finished = False
             self.book_generation_started = self._project_is_locked()
+            self.book_generation_finished = self._project_is_finished()
+            self.auto_export_completed = all(
+                (self.project_output_dir / filename).exists()
+                for filename in ("book.md", "book.txt", "book.docx", "book.pdf")
+            )
             self._populate_project(project)
             self.status_var.set(self.t("status.project_loaded"))
             self.task_var.set(self.t("status.project_loaded"))
@@ -2106,6 +2330,12 @@ class AIBookBatchWriterApp(ctk.CTk):
         self._show_page("create", show_warning=False)
         self._update_maintenance_summary()
 
+    @staticmethod
+    def _output_directory_for_project_file(path: Path) -> Path:
+        if path.name.casefold() == "project.json":
+            return path.parent
+        return path.parent / path.stem
+
     def _export(self, format_name: str) -> None:
         if not self.project:
             messagebox.showwarning(
@@ -2141,13 +2371,20 @@ class AIBookBatchWriterApp(ctk.CTk):
                 export_docx,
                 "DOCX",
             ),
+            "pdf": (
+                "dialog.export_pdf",
+                ".pdf",
+                "dialog.pdf_files",
+                export_pdf,
+                "PDF",
+            ),
         }
         title_key, extension, filetype_key, exporter, display_format = options[
             format_name
         ]
         filename = filedialog.asksaveasfilename(
             title=self.t(title_key),
-            initialdir=PROJECT_ROOT / "exports",
+            initialdir=exports_directory(),
             defaultextension=extension,
             filetypes=[
                 (self.t(filetype_key), f"*{extension}"),
@@ -2186,6 +2423,34 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.log_text.delete("1.0", "end")
 
     def _show_error(self, key: str, error: Exception) -> None:
+        if isinstance(error, InputValidationError):
+            messages = [
+                self.t(
+                    issue.message_key,
+                    field=self.t(issue.field_key),
+                    **issue.params,
+                )
+                for issue in error.issues
+            ]
+            messagebox.showerror(
+                self.t("validation.title"),
+                self.t("validation.intro")
+                + "\n\n"
+                + "\n".join(f"• {message}" for message in messages),
+            )
+            return
+        if isinstance(error, ValidationError):
+            messagebox.showerror(
+                self.t("validation.title"),
+                self.t("validation.generic"),
+            )
+            return
+        if key == "error.invalid_outline":
+            messagebox.showerror(
+                self.t("dialog.error_title"),
+                self.t("validation.outline"),
+            )
+            return
         messagebox.showerror(
             self.t("dialog.error_title"),
             self.t(key, error=str(error)),

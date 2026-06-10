@@ -5,6 +5,8 @@ from docx import Document
 from ai_book_batch_writer.exporters import (
     export_docx,
     export_markdown,
+    export_pdf,
+    export_project_bundle,
     export_txt,
 )
 
@@ -46,3 +48,29 @@ def test_docx_export_uses_heading_levels(tmp_path, sample_project) -> None:
     assert ("Reliable AI Systems", "Heading 1") in headings
     assert ("Chapter 1: Start With the Problem", "Heading 2") in headings
     assert ("Map the Workflow", "Heading 3") in headings
+
+
+def test_pdf_export_creates_print_document_without_metadata_section(
+    tmp_path,
+    sample_project,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "book.pdf"
+    monkeypatch.setattr(
+        "ai_book_batch_writer.exporters._metadata_lines",
+        lambda project: (_ for _ in ()).throw(
+            AssertionError("PDF must not use project metadata")
+        ),
+    )
+
+    export_pdf(sample_project, path)
+
+    assert path.read_bytes().startswith(b"%PDF")
+    assert path.stat().st_size > 1000
+
+
+def test_project_bundle_exports_all_formats(tmp_path, sample_project) -> None:
+    paths = export_project_bundle(sample_project, tmp_path / "book")
+
+    assert set(paths) == {"json", "md", "txt", "docx", "pdf"}
+    assert all(path.exists() for path in paths.values())

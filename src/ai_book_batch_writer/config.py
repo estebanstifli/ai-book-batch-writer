@@ -50,6 +50,26 @@ def user_data_dir() -> Path:
     return path
 
 
+def projects_directory() -> Path:
+    """Return the persistent directory used for user book projects."""
+    return _user_content_directory("Projects", "projects")
+
+
+def exports_directory() -> Path:
+    """Return the persistent directory used for manual exports."""
+    return _user_content_directory("Exports", "exports")
+
+
+def _user_content_directory(folder_name: str, source_folder: str) -> Path:
+    if hasattr(sys, "_MEIPASS"):
+        base = Path.home() / "Documents" / APP_NAME
+        path = base / folder_name
+    else:
+        path = PROJECT_ROOT / source_folder
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def load_environment() -> None:
     """Load environment variables from a local .env file when present."""
     load_dotenv(PROJECT_ROOT / ".env", override=False)

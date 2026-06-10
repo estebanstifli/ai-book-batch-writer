@@ -30,6 +30,8 @@
     "step_1": "1  Book Setup",
     "step_2": "2  Review Outline",
     "step_3": "3  Generate & Export",
+    "step_3_finished": "3  Generation Finished",
+    "step_3_completed": "3  Generated & Exported",
     "override_hint": "Global model settings are preloaded. Changes here apply only to this book.",
     "book_locked_hint": "The outline is locked after book generation starts."
   },
@@ -80,6 +82,7 @@
     "export_markdown": "Export Markdown",
     "export_txt": "Export TXT",
     "export_docx": "Export DOCX",
+    "export_pdf": "Export PDF",
     "clear_log": "Clear Log",
     "back_to_setup": "← Book Setup",
     "continue_project": "Continue Project",
@@ -126,7 +129,7 @@
     "chapter_count": "8",
     "words_per_chapter": "1200",
     "temperature": "0.7",
-    "max_tokens": "3000",
+    "max_tokens": "8096",
     "untitled_book": "Untitled Book"
   },
   "language": {
@@ -137,6 +140,17 @@
     "system": "System",
     "dark": "Dark",
     "light": "Light"
+  },
+  "validation": {
+    "title": "Please review these fields",
+    "intro": "Correct the following information before continuing:",
+    "required": "{field} is required.",
+    "integer": "{field} must be a whole number.",
+    "number": "{field} must be a valid number.",
+    "range": "{field} must be between {minimum} and {maximum}.",
+    "url": "{field} must be a complete HTTP or HTTPS URL.",
+    "generic": "Some entered values are not valid. Review the highlighted settings and try again.",
+    "outline": "Review the outline JSON. It must contain a title and at least one valid chapter."
   },
   "status": {
     "ready": "Ready",
@@ -155,7 +169,8 @@
     "testing_connection": "Testing provider connection...",
     "loading_models": "Loading available models...",
     "connection_ok": "Connection successful",
-    "models_updated": "Model catalog updated"
+    "models_updated": "Model catalog updated",
+    "saving_outputs": "Saving the project and creating all export formats..."
   },
   "log": {
     "outline_started": "Outline generation started with {provider} / {model}.",
@@ -172,6 +187,8 @@
     "project_saved": "Project saved to {path}.",
     "project_loaded": "Project loaded from {path}.",
     "exported": "Exported {format} to {path}.",
+    "auto_exported": "Project and all formats were saved automatically in {path}.",
+    "auto_export_failed": "Automatic project export failed: {error}",
     "error": "Error: {error}"
   },
   "dialog": {
@@ -182,13 +199,17 @@
     "export_markdown": "Export Markdown",
     "export_txt": "Export TXT",
     "export_docx": "Export DOCX",
+    "export_pdf": "Export PDF",
     "json_files": "JSON project files",
     "markdown_files": "Markdown files",
     "text_files": "Text files",
     "docx_files": "Word documents",
+    "pdf_files": "PDF documents",
     "all_files": "All files",
     "confirm_close_title": "Generation in progress",
     "confirm_close": "Generation is still running. Cancel it and close the application?",
+    "generation_progress": "Generation in progress",
+    "please_wait": "Your project is being generated",
     "global_settings_title": "Global model settings",
     "new_project_title": "Start a new book",
     "new_project_confirm": "The current in-memory project will be replaced. Continue?"
@@ -200,6 +221,7 @@
     "global_settings_missing": "No global model settings have been saved yet. You can continue with the displayed defaults or configure them from Global Settings.",
     "global_settings_saved": "Global model settings were saved. New book projects will preload them.",
     "outline_locked": "The outline cannot be regenerated after book generation has started.",
+    "auto_exported": "The book is complete. The project, Markdown, TXT, DOCX and print-ready PDF were saved in:\n\n{path}",
     "connection_ok": "Connection to {provider} was successful.",
     "models_updated": "Loaded and cached {count} model(s) from {provider}."
   },
@@ -217,6 +239,7 @@
     "connection_test_failed": "The provider connection test failed.\n\n{error}",
     "model_refresh_failed": "The model catalog could not be updated.\n\n{error}",
     "no_models_returned": "The provider did not return any compatible models.",
+    "auto_export_failed": "The book was generated, but one or more automatic files could not be created in {path}.\n\n{error}",
     "open_folder_failed": "The folder could not be opened.\n\n{error}",
     "open_folder_unsupported": "Opening folders is not supported on this platform."
   }

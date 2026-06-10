@@ -30,6 +30,8 @@
     "step_1": "1  Configurar libro",
     "step_2": "2  Revisar esquema",
     "step_3": "3  Generar y exportar",
+    "step_3_finished": "3  Generación finalizada",
+    "step_3_completed": "3  Generado y exportado",
     "override_hint": "Se precarga la configuración global. Los cambios aquí solo afectan a este libro.",
     "book_locked_hint": "El esquema queda bloqueado cuando comienza la generación del libro."
   },
@@ -80,6 +82,7 @@
     "export_markdown": "Exportar Markdown",
     "export_txt": "Exportar TXT",
     "export_docx": "Exportar DOCX",
+    "export_pdf": "Exportar PDF",
     "clear_log": "Limpiar registro",
     "back_to_setup": "← Configurar libro",
     "continue_project": "Continuar proyecto",
@@ -126,7 +129,7 @@
     "chapter_count": "8",
     "words_per_chapter": "1200",
     "temperature": "0.7",
-    "max_tokens": "3000",
+    "max_tokens": "8096",
     "untitled_book": "Libro sin título"
   },
   "language": {
@@ -137,6 +140,17 @@
     "system": "Sistema",
     "dark": "Oscuro",
     "light": "Claro"
+  },
+  "validation": {
+    "title": "Revisa estos campos",
+    "intro": "Corrige la siguiente información antes de continuar:",
+    "required": "El campo {field} es obligatorio.",
+    "integer": "El campo {field} debe ser un número entero.",
+    "number": "El campo {field} debe ser un número válido.",
+    "range": "El campo {field} debe estar entre {minimum} y {maximum}.",
+    "url": "El campo {field} debe contener una URL HTTP o HTTPS completa.",
+    "generic": "Algunos valores no son válidos. Revisa la configuración e inténtalo de nuevo.",
+    "outline": "Revisa el JSON del esquema. Debe contener un título y al menos un capítulo válido."
   },
   "status": {
     "ready": "Listo",
@@ -155,7 +169,8 @@
     "testing_connection": "Probando la conexión con el proveedor...",
     "loading_models": "Cargando los modelos disponibles...",
     "connection_ok": "Conexión correcta",
-    "models_updated": "Catálogo de modelos actualizado"
+    "models_updated": "Catálogo de modelos actualizado",
+    "saving_outputs": "Guardando el proyecto y creando todos los formatos de exportación..."
   },
   "log": {
     "outline_started": "Generación del esquema iniciada con {provider} / {model}.",
@@ -172,6 +187,8 @@
     "project_saved": "Proyecto guardado en {path}.",
     "project_loaded": "Proyecto cargado desde {path}.",
     "exported": "{format} exportado a {path}.",
+    "auto_exported": "El proyecto y todos los formatos se han guardado automáticamente en {path}.",
+    "auto_export_failed": "La exportación automática del proyecto ha fallado: {error}",
     "error": "Error: {error}"
   },
   "dialog": {
@@ -182,13 +199,17 @@
     "export_markdown": "Exportar Markdown",
     "export_txt": "Exportar TXT",
     "export_docx": "Exportar DOCX",
+    "export_pdf": "Exportar PDF",
     "json_files": "Archivos de proyecto JSON",
     "markdown_files": "Archivos Markdown",
     "text_files": "Archivos de texto",
     "docx_files": "Documentos de Word",
+    "pdf_files": "Documentos PDF",
     "all_files": "Todos los archivos",
     "confirm_close_title": "Generación en curso",
     "confirm_close": "La generación sigue en curso. ¿Quieres cancelarla y cerrar la aplicación?",
+    "generation_progress": "Generación en curso",
+    "please_wait": "Tu proyecto se está generando",
     "global_settings_title": "Configuración global del modelo",
     "new_project_title": "Crear un libro nuevo",
     "new_project_confirm": "El proyecto actual en memoria será sustituido. ¿Quieres continuar?"
@@ -200,6 +221,7 @@
     "global_settings_missing": "Todavía no se ha guardado una configuración global del modelo. Puedes continuar con los valores mostrados o configurarlos desde Configuración global.",
     "global_settings_saved": "La configuración global del modelo se ha guardado. Se precargará en los proyectos nuevos.",
     "outline_locked": "El esquema no se puede volver a generar después de iniciar la generación del libro.",
+    "auto_exported": "El libro está terminado. El proyecto, Markdown, TXT, DOCX y PDF para impresión se han guardado en:\n\n{path}",
     "connection_ok": "La conexión con {provider} se ha realizado correctamente.",
     "models_updated": "Se han cargado y guardado {count} modelo(s) de {provider}."
   },
@@ -217,6 +239,7 @@
     "connection_test_failed": "La prueba de conexión con el proveedor ha fallado.\n\n{error}",
     "model_refresh_failed": "No se ha podido actualizar el catálogo de modelos.\n\n{error}",
     "no_models_returned": "El proveedor no ha devuelto ningún modelo compatible.",
+    "auto_export_failed": "El libro se ha generado, pero no se han podido crear uno o varios archivos automáticos en {path}.\n\n{error}",
     "open_folder_failed": "No se ha podido abrir la carpeta.\n\n{error}",
     "open_folder_unsupported": "Esta plataforma no permite abrir carpetas desde la aplicación."
   }

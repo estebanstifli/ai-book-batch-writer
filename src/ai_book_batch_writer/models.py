@@ -30,7 +30,7 @@ class LLMSettings(BaseModel):
     api_key: str | None = Field(default=None, repr=False, exclude=True)
     api_base: str | None = None
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=3000, ge=128, le=128_000)
+    max_tokens: int = Field(default=8096, ge=128, le=128_000)
 
     @field_validator("model")
     @classmethod

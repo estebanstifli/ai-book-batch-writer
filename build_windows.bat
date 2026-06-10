@@ -18,6 +18,7 @@ if errorlevel 1 goto :error
   --name "AI Book Batch Writer" ^
   --paths "src" ^
   --add-data "locales;locales" ^
+  --add-data "data;data" ^
   --collect-all customtkinter ^
   --hidden-import langchain_anthropic ^
   --hidden-import langchain_google_genai ^
