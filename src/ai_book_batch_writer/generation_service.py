@@ -51,6 +51,8 @@ from ai_book_batch_writer.utils import (
 
 logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[GenerationEvent], None]
+CheckpointCallback = Callable[[BookProject], None]
+MAX_MODEL_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -85,9 +87,28 @@ class BookGenerationService:
     def _reset_usage(self) -> None:
         self.usage = TokenUsage()
 
+    @staticmethod
+    def _record_result_usage(
+        project: BookProject,
+        result: ModelResult,
+    ) -> None:
+        project.token_usage.add_book(
+            result.tokens,
+            result.estimated_tokens,
+        )
+
+    @staticmethod
+    def _checkpoint(
+        project: BookProject,
+        callback: CheckpointCallback | None,
+    ) -> None:
+        project.touch()
+        if callback:
+            callback(project)
+
     @retry(
         retry=retry_if_exception(_is_retryable),
-        stop=stop_after_attempt(3),
+        stop=stop_after_attempt(MAX_MODEL_ATTEMPTS),
         wait=wait_exponential(multiplier=1, min=1, max=8),
         reraise=True,
     )
@@ -97,17 +118,20 @@ class BookGenerationService:
         values: dict[str, Any],
         usage_bucket: str = "book",
     ) -> ModelResult:
-        chain = prompt | self.llm
-        message = chain.invoke(values)
+        messages = prompt.format_messages(**values)
+        message = self.llm.invoke(messages)
         text = message_content_to_text(message)
         if not text:
             raise RuntimeError("The model returned an empty response.")
         reported_tokens = total_tokens_from_message(message)
         estimated = reported_tokens <= 0
+        estimated_text = "\n".join(
+            [*(message_content_to_text(item) for item in messages), text]
+        )
         result = ModelResult(
             text=text,
             words=count_words(text),
-            tokens=reported_tokens or estimate_tokens(text),
+            tokens=reported_tokens or estimate_tokens(estimated_text),
             estimated_tokens=estimated,
         )
         if usage_bucket == "outline":
@@ -254,6 +278,7 @@ class BookGenerationService:
         project: BookProject,
         chapter: BookChapter,
         cancel_token: CancelToken | None = None,
+        checkpoint_callback: CheckpointCallback | None = None,
     ) -> BookChapter:
         """Generate one chapter, using sections when present."""
         self._reset_usage()
@@ -268,9 +293,12 @@ class BookGenerationService:
                     project.settings.words_per_chapter // len(chapter.sections),
                 )
                 for section in chapter.sections:
+                    if section.status == "completed" and section.content:
+                        continue
                     token.raise_if_cancelled()
                     section.status = "generating"
                     section.error = None
+                    self._checkpoint(project, checkpoint_callback)
                     result = self._generate_section(
                         project,
                         chapter,
@@ -280,22 +308,34 @@ class BookGenerationService:
                     )
                     section.content = result.text
                     section.status = "completed"
+                    self._record_result_usage(project, result)
+                    self._checkpoint(project, checkpoint_callback)
                 chapter.content = None
             else:
                 values = self._common_prompt_values(project, chapter)
                 values["target_words"] = project.settings.words_per_chapter
                 result = self._invoke_prompt(build_chapter_prompt(), values)
                 chapter.content = result.text
+                self._record_result_usage(project, result)
             chapter.status = "completed"
+            self._checkpoint(project, checkpoint_callback)
         except GenerationCancelled:
             chapter.status = "pending"
+            for section in chapter.sections:
+                if section.status == "generating":
+                    section.status = "pending"
+                    section.error = None
+            self._checkpoint(project, checkpoint_callback)
             raise
         except Exception as exc:
             chapter.status = "failed"
             chapter.error = str(exc)
+            for section in chapter.sections:
+                if section.status == "generating":
+                    section.status = "failed"
+                    section.error = str(exc)
+            self._checkpoint(project, checkpoint_callback)
             raise
-        finally:
-            project.token_usage.merge(self.usage)
         return chapter
 
     def generate_book(
@@ -303,6 +343,7 @@ class BookGenerationService:
         project: BookProject,
         progress_callback: ProgressCallback | None = None,
         cancel_token: CancelToken | None = None,
+        checkpoint_callback: CheckpointCallback | None = None,
     ) -> BookProject:
         """Generate all pending chapters sequentially with progress events."""
         self._reset_usage()
@@ -311,9 +352,9 @@ class BookGenerationService:
                 project,
                 progress_callback=progress_callback,
                 cancel_token=cancel_token,
+                checkpoint_callback=checkpoint_callback,
             )
         finally:
-            project.token_usage.merge(self.usage)
             project.touch()
 
     def _generate_book_impl(
@@ -321,11 +362,22 @@ class BookGenerationService:
         project: BookProject,
         progress_callback: ProgressCallback | None = None,
         cancel_token: CancelToken | None = None,
+        checkpoint_callback: CheckpointCallback | None = None,
     ) -> BookProject:
         token = cancel_token or CancelToken()
         callback = progress_callback or (lambda event: None)
         total_units = sum(max(1, len(chapter.sections)) for chapter in project.chapters)
-        completed_units = 0
+        completed_units = sum(
+            (
+                sum(
+                    section.status == "completed" and bool(section.content)
+                    for section in chapter.sections
+                )
+                if chapter.sections
+                else int(chapter.is_complete)
+            )
+            for chapter in project.chapters
+        )
 
         callback(
             GenerationEvent(
@@ -337,9 +389,11 @@ class BookGenerationService:
 
         for chapter in project.chapters:
             token.raise_if_cancelled()
-            chapter_start_units = completed_units
+            if chapter.is_complete:
+                continue
             chapter.status = "generating"
             chapter.error = None
+            self._checkpoint(project, checkpoint_callback)
             callback(
                 GenerationEvent(
                     kind="chapter",
@@ -357,9 +411,12 @@ class BookGenerationService:
                         project.settings.words_per_chapter // len(chapter.sections),
                     )
                     for section in chapter.sections:
+                        if section.status == "completed" and section.content:
+                            continue
                         token.raise_if_cancelled()
                         section.status = "generating"
                         section.error = None
+                        self._checkpoint(project, checkpoint_callback)
                         callback(
                             GenerationEvent(
                                 kind="section",
@@ -381,7 +438,9 @@ class BookGenerationService:
                         )
                         section.content = result.text
                         section.status = "completed"
+                        self._record_result_usage(project, result)
                         completed_units += 1
+                        self._checkpoint(project, checkpoint_callback)
                         callback(
                             GenerationEvent(
                                 kind="progress",
@@ -390,10 +449,7 @@ class BookGenerationService:
                                     "section": section.title,
                                     "words": result.words,
                                     "tokens": result.tokens,
-                                    "total_tokens": (
-                                        project.token_usage.total_tokens
-                                        + self.usage.total_tokens
-                                    ),
+                                    "total_tokens": project.token_usage.total_tokens,
                                 },
                                 current=completed_units,
                                 total=total_units,
@@ -405,7 +461,9 @@ class BookGenerationService:
                     values["target_words"] = project.settings.words_per_chapter
                     result = self._invoke_prompt(build_chapter_prompt(), values)
                     chapter.content = result.text
+                    self._record_result_usage(project, result)
                     completed_units += 1
+                    self._checkpoint(project, checkpoint_callback)
                     callback(
                         GenerationEvent(
                             kind="progress",
@@ -414,18 +472,21 @@ class BookGenerationService:
                                 "number": chapter.number,
                                 "words": result.words,
                                 "tokens": result.tokens,
-                                "total_tokens": (
-                                    project.token_usage.total_tokens
-                                    + self.usage.total_tokens
-                                ),
+                                "total_tokens": project.token_usage.total_tokens,
                             },
                             current=completed_units,
                             total=total_units,
                         )
                     )
                 chapter.status = "completed"
+                self._checkpoint(project, checkpoint_callback)
             except GenerationCancelled:
                 chapter.status = "pending"
+                for section in chapter.sections:
+                    if section.status == "generating":
+                        section.status = "pending"
+                        section.error = None
+                self._checkpoint(project, checkpoint_callback)
                 raise
             except Exception as exc:
                 chapter.status = "failed"
@@ -434,15 +495,13 @@ class BookGenerationService:
                     if section.status == "generating":
                         section.status = "failed"
                         section.error = str(exc)
-                chapter_units = max(1, len(chapter.sections))
-                completed_in_chapter = completed_units - chapter_start_units
-                completed_units += max(0, chapter_units - completed_in_chapter)
+                self._checkpoint(project, checkpoint_callback)
                 callback(
                     GenerationEvent(
                         kind="error",
                         message_key="log.chapter_failed",
                         params={"number": chapter.number, "error": str(exc)},
-                        current=min(completed_units, total_units),
+                        current=completed_units,
                         total=total_units,
                     )
                 )
@@ -460,12 +519,9 @@ class BookGenerationService:
                 ),
                 params={
                     "failed": failed_chapters,
-                    "total_tokens": (
-                        project.token_usage.total_tokens
-                        + self.usage.total_tokens
-                    ),
+                    "total_tokens": project.token_usage.total_tokens,
                 },
-                current=total_units,
+                current=completed_units,
                 total=total_units,
             )
         )

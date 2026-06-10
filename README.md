@@ -28,22 +28,25 @@ the interface evolves.
 - Editable model dropdowns populated from each provider's live catalog
 - Local JSON model cache for fast startup and offline reuse
 - Friendly multi-field validation without exposing internal exceptions
-- Editable output-language selector backed by 693 Unicode CLDR entries
+- Searchable, editable output-language selector backed by nearly 700 Unicode
+  CLDR entries
 - Modal generation progress with cancellation and live chapter status
-- Automatic project save plus Markdown, TXT, DOCX and PDF exports
+- Automatic project checkpoints plus Markdown, TXT, DOCX and PDF exports
 - OpenAI, OpenRouter, Anthropic Claude, Google Gemini and local Ollama
   providers through dedicated LangChain integrations
-- Real LangChain prompt templates, chat model abstraction and invocation chains
+- Real LangChain prompt templates, chat model abstraction and model invocation
 - Pydantic validation for settings, outlines and saved projects
 - JSON extraction plus model-assisted repair for malformed outlines
 - Sequential chapter and section generation with continuity context
-- Persistent outline, book and total token usage counters
+- Provider-reported outline, book and total token usage counters, with a
+  clearly marked estimate only when the provider omits usage metadata
 - Responsive CustomTkinter UI using a background worker and event queue
 - Cancellation between model requests
 - Save and load JSON projects without persisting API keys
 - Markdown, TXT and DOCX export
 - English and Spanish UI backed by nested JSON translations and English fallback
-- Retry with exponential backoff and file-based diagnostic logging
+- Three model-call attempts with exponential backoff and file-based diagnostic
+  logging
 - PyInstaller build script for a standalone Windows executable
 
 ## Why This Project Exists
@@ -83,7 +86,9 @@ src/ai_book_batch_writer/
 ├─ prompts.py             # ChatPromptTemplate definitions
 ├─ json_utils.py          # Extraction, validation and repair
 ├─ project_store.py       # API-key-safe JSON persistence
+├─ project_index.py       # Complete and incomplete project discovery
 ├─ exporters.py           # Markdown, TXT and DOCX
+├─ token_utils.py         # Cross-provider usage metadata normalization
 └─ i18n.py                # JSON translation loader
 ```
 
@@ -95,9 +100,10 @@ Model discovery uses each provider's official REST catalog. Refreshed model
 identifiers are stored under the user's application data directory in
 `model_cache.json`; the cache contains model names and timestamps only.
 
-The output-language selector is backed by the Unicode CLDR language catalog
-and remains editable for custom names or language variants. The bundled source
-and attribution are documented in [`data/README.md`](data/README.md).
+The output-language selector is backed by the Unicode CLDR language catalog,
+filters suggestions as the user types and remains editable for custom names or
+language variants. The bundled source and attribution are documented in
+[`data/README.md`](data/README.md).
 
 ## Install From Source
 
@@ -181,14 +187,42 @@ install Ollama and download their chosen model separately.
 3. Adjust the preloaded model settings for this book when needed.
 4. Describe the book, guide, manual, tutorial or structured article.
 5. Generate, review and edit the JSON outline.
-6. Start book generation. The setup and outline steps are then locked to keep
+6. The project is saved automatically after outline creation and again before
+   book generation starts. The setup and outline steps are then locked to keep
    generated content consistent with its structure.
 7. Monitor each chapter or section in the modal progress window and log.
-8. When generation finishes, the project and every export format are saved
-   automatically in a dedicated project folder.
+8. Each status change and completed section is checkpointed to `project.json`.
+9. When generation finishes successfully, every export format is saved
+   automatically in the dedicated project folder.
 
-Saved projects can be reopened from **Book Maintenance**. Export commands and
-working-folder shortcuts are also available under **Other Utilities**.
+**Book Maintenance** lists both complete and incomplete projects. Incomplete
+projects can be reopened days later and resumed without regenerating completed
+chapters or sections. Export commands and working-folder shortcuts are also
+available under **Other Utilities**.
+
+## Retries and Recovery
+
+Each model request gets three attempts in total: the initial request plus two
+automatic retries with exponential backoff. Validation and cancellation errors
+are not retried.
+
+If all attempts for a chapter or section fail, the error and incomplete status
+are saved. Generation continues with later chapters when possible. Reopening
+the project from **Book Maintenance** and choosing **Resume Generation**
+retries only failed or pending work. A process interruption is also recoverable:
+transient `generating` states are converted back to `pending` when the project
+is loaded.
+
+## Token Accounting
+
+The application reads token usage returned in LangChain message metadata. It
+normalizes the common OpenAI, Anthropic, Gemini and Ollama field layouts and
+persists input plus output totals in the project.
+
+Some local models or provider responses do not include usage metadata. In that
+case the application estimates prompt and output tokens and adds an
+`(estimated)` suffix in the UI. Failed network requests cannot be counted when
+the provider returns no response or usage metadata.
 
 ## Export Formats
 
@@ -238,8 +272,9 @@ pytest
 
 The test suite covers translations, JSON extraction and repair behavior,
 prompt construction, project persistence, exporters and the generation
-workflow with a fake LangChain chat model. It also constructs all five provider
-adapters without making API calls.
+workflow with fake LangChain chat models. It also verifies provider token
+metadata variants, checkpoint/resume behavior, complete and incomplete project
+discovery, and constructs all five provider adapters without making API calls.
 
 ## Localization
 
@@ -279,7 +314,7 @@ originality, factual accuracy, citations and the impact of published content.
 ## Roadmap
 
 - Structured outline editor with inline chapter and section controls
-- Resume/regenerate controls for individual failed sections
+- Regenerate controls for individual sections
 - Streaming output and richer usage/cost metrics
 - Optional LiteLLM and Azure OpenAI adapters
 - Optional encrypted credential storage

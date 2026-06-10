@@ -95,6 +95,18 @@ class BookChapter(BaseModel):
     status: GenerationStatus = "pending"
     error: str | None = None
 
+    @property
+    def is_complete(self) -> bool:
+        """Return whether all expected chapter content is available."""
+        if self.status != "completed":
+            return False
+        if self.sections:
+            return all(
+                section.status == "completed" and bool(section.content)
+                for section in self.sections
+            )
+        return bool(self.content)
+
 
 class BookOutline(BaseModel):
     """Structured model output for the editable outline."""

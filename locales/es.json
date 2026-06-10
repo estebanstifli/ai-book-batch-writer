@@ -41,7 +41,12 @@
     "current_project": "Proyecto actual",
     "no_project": "No hay ningún proyecto cargado",
     "no_project_detail": "Carga un proyecto para consultar sus capítulos, progreso y consumo de tokens.",
-    "project_detail": "{completed} de {chapters} capítulos completados · {tokens} tokens"
+    "project_detail": "{completed} de {chapters} capítulos completados · {tokens} tokens",
+    "saved_projects": "Proyectos guardados",
+    "no_saved_projects": "No se han encontrado proyectos guardados.",
+    "status_completed": "Completado",
+    "status_incomplete": "Incompleto",
+    "saved_project_detail": "{completed}/{chapters} capítulos · {failed} con errores · {tokens} tokens · Actualizado {updated}"
   },
   "settings": {
     "title": "Configuración global",
@@ -89,6 +94,10 @@
     "save_global_settings": "Guardar configuración global",
     "test_connection": "Probar",
     "refresh_models": "Actualizar modelos",
+    "resume_generation": "Reanudar generación",
+    "refresh_projects": "Actualizar proyectos",
+    "open_project": "Abrir proyecto",
+    "resume_project": "Reanudar proyecto",
     "open_exports_folder": "Abrir carpeta de exportaciones",
     "open_projects_folder": "Abrir carpeta de proyectos"
   },
@@ -159,6 +168,7 @@
     "saving": "Guardando proyecto...",
     "completed": "Completado",
     "completed_with_errors": "Completado con errores",
+    "incomplete": "Incompleto · progreso guardado",
     "cancelled": "Cancelado",
     "cancelling": "Se cancelará después de la solicitud actual al modelo...",
     "failed": "Error",
@@ -170,7 +180,8 @@
     "loading_models": "Cargando los modelos disponibles...",
     "connection_ok": "Conexión correcta",
     "models_updated": "Catálogo de modelos actualizado",
-    "saving_outputs": "Guardando el proyecto y creando todos los formatos de exportación..."
+    "saving_outputs": "Guardando el proyecto y creando todos los formatos de exportación...",
+    "saving_checkpoint": "Guardando el punto de recuperación del proyecto incompleto..."
   },
   "log": {
     "outline_started": "Generación del esquema iniciada con {provider} / {model}.",
@@ -189,6 +200,7 @@
     "exported": "{format} exportado a {path}.",
     "auto_exported": "El proyecto y todos los formatos se han guardado automáticamente en {path}.",
     "auto_export_failed": "La exportación automática del proyecto ha fallado: {error}",
+    "project_checkpointed": "Punto de recuperación guardado en {path}.",
     "error": "Error: {error}"
   },
   "dialog": {
@@ -222,6 +234,7 @@
     "global_settings_saved": "La configuración global del modelo se ha guardado. Se precargará en los proyectos nuevos.",
     "outline_locked": "El esquema no se puede volver a generar después de iniciar la generación del libro.",
     "auto_exported": "El libro está terminado. El proyecto, Markdown, TXT, DOCX y PDF para impresión se han guardado en:\n\n{path}",
+    "incomplete_saved": "La generación terminó con capítulos incompletos. El progreso se ha guardado en:\n\n{path}\n\nPuedes reanudarlo más adelante desde Mantenimiento de libros.",
     "connection_ok": "La conexión con {provider} se ha realizado correctamente.",
     "models_updated": "Se han cargado y guardado {count} modelo(s) de {provider}."
   },
@@ -240,6 +253,7 @@
     "model_refresh_failed": "No se ha podido actualizar el catálogo de modelos.\n\n{error}",
     "no_models_returned": "El proveedor no ha devuelto ningún modelo compatible.",
     "auto_export_failed": "El libro se ha generado, pero no se han podido crear uno o varios archivos automáticos en {path}.\n\n{error}",
+    "autosave_failed": "No se ha podido guardar el proyecto automáticamente.\n\n{error}",
     "open_folder_failed": "No se ha podido abrir la carpeta.\n\n{error}",
     "open_folder_unsupported": "Esta plataforma no permite abrir carpetas desde la aplicación."
   }

@@ -41,7 +41,12 @@
     "current_project": "Current project",
     "no_project": "No project loaded",
     "no_project_detail": "Load a project to see its chapters, progress and token usage.",
-    "project_detail": "{completed} of {chapters} chapters completed · {tokens} tokens"
+    "project_detail": "{completed} of {chapters} chapters completed · {tokens} tokens",
+    "saved_projects": "Saved Projects",
+    "no_saved_projects": "No saved projects were found.",
+    "status_completed": "Completed",
+    "status_incomplete": "Incomplete",
+    "saved_project_detail": "{completed}/{chapters} chapters · {failed} failed · {tokens} tokens · Updated {updated}"
   },
   "settings": {
     "title": "Global Settings",
@@ -89,6 +94,10 @@
     "save_global_settings": "Save Global Settings",
     "test_connection": "Test",
     "refresh_models": "Refresh Models",
+    "resume_generation": "Resume Generation",
+    "refresh_projects": "Refresh Projects",
+    "open_project": "Open Project",
+    "resume_project": "Resume Project",
     "open_exports_folder": "Open Exports Folder",
     "open_projects_folder": "Open Projects Folder"
   },
@@ -159,6 +168,7 @@
     "saving": "Saving project...",
     "completed": "Completed",
     "completed_with_errors": "Completed with errors",
+    "incomplete": "Incomplete · progress saved",
     "cancelled": "Cancelled",
     "cancelling": "Cancelling after the current model request...",
     "failed": "Failed",
@@ -170,7 +180,8 @@
     "loading_models": "Loading available models...",
     "connection_ok": "Connection successful",
     "models_updated": "Model catalog updated",
-    "saving_outputs": "Saving the project and creating all export formats..."
+    "saving_outputs": "Saving the project and creating all export formats...",
+    "saving_checkpoint": "Saving incomplete project checkpoint..."
   },
   "log": {
     "outline_started": "Outline generation started with {provider} / {model}.",
@@ -189,6 +200,7 @@
     "exported": "Exported {format} to {path}.",
     "auto_exported": "Project and all formats were saved automatically in {path}.",
     "auto_export_failed": "Automatic project export failed: {error}",
+    "project_checkpointed": "Project checkpoint saved to {path}.",
     "error": "Error: {error}"
   },
   "dialog": {
@@ -222,6 +234,7 @@
     "global_settings_saved": "Global model settings were saved. New book projects will preload them.",
     "outline_locked": "The outline cannot be regenerated after book generation has started.",
     "auto_exported": "The book is complete. The project, Markdown, TXT, DOCX and print-ready PDF were saved in:\n\n{path}",
+    "incomplete_saved": "Generation finished with incomplete chapters. Your progress was saved in:\n\n{path}\n\nYou can resume it later from Book Maintenance.",
     "connection_ok": "Connection to {provider} was successful.",
     "models_updated": "Loaded and cached {count} model(s) from {provider}."
   },
@@ -240,6 +253,7 @@
     "model_refresh_failed": "The model catalog could not be updated.\n\n{error}",
     "no_models_returned": "The provider did not return any compatible models.",
     "auto_export_failed": "The book was generated, but one or more automatic files could not be created in {path}.\n\n{error}",
+    "autosave_failed": "The project could not be saved automatically.\n\n{error}",
     "open_folder_failed": "The folder could not be opened.\n\n{error}",
     "open_folder_unsupported": "Opening folders is not supported on this platform."
   }

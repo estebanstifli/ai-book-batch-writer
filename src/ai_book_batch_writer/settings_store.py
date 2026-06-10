@@ -8,6 +8,8 @@ from typing import Any
 
 from ai_book_batch_writer.config import user_data_dir
 
+SETTINGS_SCHEMA_VERSION = 2
+
 
 class SettingsStore:
     """Store appearance and provider preferences without credentials."""
@@ -21,7 +23,12 @@ class SettingsStore:
         try:
             with self.path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
-            return data if isinstance(data, dict) else {}
+            if not isinstance(data, dict):
+                return {}
+            migrated = self._migrate(data)
+            if migrated != data:
+                self.save(migrated)
+            return migrated
         except (OSError, json.JSONDecodeError):
             return {}
 
@@ -60,3 +67,24 @@ class SettingsStore:
             or "secret" in normalized
             or normalized in {"token", "access_token", "auth_token", "password"}
         )
+
+    @staticmethod
+    def _migrate(settings: dict[str, Any]) -> dict[str, Any]:
+        """Upgrade safe preferences written by earlier application versions."""
+        migrated = dict(settings)
+        version = migrated.get("settings_schema_version", 1)
+        try:
+            version_number = int(version)
+        except (TypeError, ValueError):
+            version_number = 1
+
+        if version_number < 2:
+            global_llm = migrated.get("global_llm")
+            if isinstance(global_llm, dict):
+                global_llm = dict(global_llm)
+                if global_llm.get("max_tokens") in {None, 3000, "3000"}:
+                    global_llm["max_tokens"] = 8096
+                migrated["global_llm"] = global_llm
+
+        migrated["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
+        return migrated

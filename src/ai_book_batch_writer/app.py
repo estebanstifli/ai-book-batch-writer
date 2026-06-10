@@ -35,11 +35,13 @@ from ai_book_batch_writer.input_validation import (
     validate_llm_input,
 )
 from ai_book_batch_writer.json_utils import parse_outline_document
-from ai_book_batch_writer.language_catalog import load_output_languages
+from ai_book_batch_writer.language_catalog import (
+    filter_languages,
+    load_output_languages,
+)
 from ai_book_batch_writer.llm_providers import (
     PROVIDER_SPECS,
     get_provider_spec,
-    provider_api_key,
     provider_key_env_display,
     provider_requires_api_key,
     provider_supports_api_base,
@@ -53,6 +55,7 @@ from ai_book_batch_writer.models import (
     LLMSettings,
     TokenUsage,
 )
+from ai_book_batch_writer.project_index import discover_projects
 from ai_book_batch_writer.project_store import load_project, save_project
 from ai_book_batch_writer.provider_discovery import (
     list_provider_models,
@@ -273,6 +276,16 @@ class AIBookBatchWriterApp(ctk.CTk):
                 if value and value.strip()
             },
             key=str.casefold,
+        )
+
+    def _filter_output_languages(self, _event: Any = None) -> None:
+        query = self.output_language_var.get().strip()
+        if not query:
+            self.output_language_combo.configure(values=self.output_languages)
+            return
+        matches = filter_languages(self.output_languages, query)
+        self.output_language_combo.configure(
+            values=matches or [self.output_language_var.get()]
         )
 
     def _build_ui(self) -> None:
@@ -605,6 +618,18 @@ class AIBookBatchWriterApp(ctk.CTk):
             pady=8,
             sticky="ew",
         )
+        self.output_language_combo._entry.bind(
+            "<KeyRelease>",
+            self._filter_output_languages,
+            add="+",
+        )
+        self.output_language_combo._entry.bind(
+            "<FocusOut>",
+            lambda _event: self.output_language_combo.configure(
+                values=self.output_languages
+            ),
+            add="+",
+        )
         self._entry(book_panel, 3, "label.tone", self.tone_var)
         self._entry(book_panel, 4, "label.target_audience", self.audience_var)
         self._entry(
@@ -767,6 +792,14 @@ class AIBookBatchWriterApp(ctk.CTk):
             text=self.t("wizard.book_locked_hint"),
             text_color=("gray35", "gray70"),
         ).pack(side="left")
+        self.resume_generation_button = ctk.CTkButton(
+            actions,
+            text=self.t("button.resume_generation"),
+            command=self._generate_book,
+            width=165,
+        )
+        self.resume_generation_button.pack(side="left", padx=(12, 0))
+        self.busy_sensitive_buttons.append(self.resume_generation_button)
         for key, command in (
             ("button.export_pdf", lambda: self._export("pdf")),
             ("button.export_docx", lambda: self._export("docx")),
@@ -796,17 +829,29 @@ class AIBookBatchWriterApp(ctk.CTk):
     def _build_maintenance_page(self) -> None:
         page = self.pages["maintenance"]
         page.grid_columnconfigure(0, weight=1)
-        page.grid_rowconfigure(2, weight=1)
+        page.grid_rowconfigure(3, weight=1)
         self._page_title(page, "maintenance.title", "maintenance.description")
+        toolbar = ctk.CTkFrame(page, fg_color="transparent")
+        toolbar.grid(row=1, column=0, pady=(10, 16))
         ctk.CTkButton(
-            page,
+            toolbar,
             text=self.t("button.load_project"),
             command=self._load_project,
             height=42,
             width=190,
-        ).grid(row=1, column=0, pady=(10, 16))
+        ).pack(side="left", padx=5)
+        ctk.CTkButton(
+            toolbar,
+            text=self.t("button.refresh_projects"),
+            command=self._refresh_project_list,
+            height=42,
+            width=190,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("gray15", "gray90"),
+        ).pack(side="left", padx=5)
         card = ctk.CTkFrame(page, corner_radius=16, border_width=1)
-        card.grid(row=2, column=0, padx=80, pady=(0, 30), sticky="nsew")
+        card.grid(row=2, column=0, padx=80, pady=(0, 12), sticky="ew")
         card.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             card,
@@ -842,6 +887,20 @@ class AIBookBatchWriterApp(ctk.CTk):
             text_color=("gray15", "gray90"),
         )
         self.maintenance_save_button.pack(side="left", padx=8)
+
+        self.project_list_frame = ctk.CTkScrollableFrame(
+            page,
+            label_text=self.t("maintenance.saved_projects"),
+        )
+        self.project_list_frame.grid(
+            row=3,
+            column=0,
+            padx=80,
+            pady=(0, 24),
+            sticky="nsew",
+        )
+        self.project_list_frame.grid_columnconfigure(0, weight=1)
+        self._refresh_project_list()
 
     def _build_global_settings_page(self) -> None:
         page = self.pages["settings"]
@@ -1041,6 +1100,7 @@ class AIBookBatchWriterApp(ctk.CTk):
                 )
         elif name == "maintenance":
             self._update_maintenance_summary()
+            self._refresh_project_list()
         self._render_secondary_header()
 
     def _render_secondary_header(self) -> None:
@@ -1159,6 +1219,13 @@ class AIBookBatchWriterApp(ctk.CTk):
             state="disabled" if locked or self.is_busy else "normal"
         )
         self.outline_text.configure(state="disabled" if locked else "normal")
+        self.resume_generation_button.configure(
+            state=(
+                "normal"
+                if locked and not self.book_generation_finished and not self.is_busy
+                else "disabled"
+            )
+        )
 
     def _step_label(self, step: int) -> str:
         if step != 3:
@@ -1194,18 +1261,7 @@ class AIBookBatchWriterApp(ctk.CTk):
             return True
         if not self.project or not self.project.chapters:
             return False
-        return (
-            all(
-                chapter.status in {"completed", "failed"}
-                for chapter in self.project.chapters
-            )
-            and any(
-                chapter.content
-                or chapter.status == "completed"
-                or any(section.content for section in chapter.sections)
-                for chapter in self.project.chapters
-            )
-        )
+        return all(chapter.is_complete for chapter in self.project.chapters)
 
     def _start_new_book(self) -> None:
         if self.project and not messagebox.askyesno(
@@ -1263,9 +1319,7 @@ class AIBookBatchWriterApp(ctk.CTk):
             self.maintenance_save_button.configure(state="disabled")
             return
         title = self.project.settings.title or self.t("default.untitled_book")
-        completed = sum(
-            chapter.status == "completed" for chapter in self.project.chapters
-        )
+        completed = sum(chapter.is_complete for chapter in self.project.chapters)
         self.maintenance_title_var.set(title)
         self.maintenance_detail_var.set(
             self.t(
@@ -1277,6 +1331,72 @@ class AIBookBatchWriterApp(ctk.CTk):
         )
         self.maintenance_continue_button.configure(state="normal")
         self.maintenance_save_button.configure(state="normal")
+
+    def _refresh_project_list(self) -> None:
+        if not hasattr(self, "project_list_frame"):
+            return
+        for child in self.project_list_frame.winfo_children():
+            child.destroy()
+        summaries = discover_projects(projects_directory())
+        if not summaries:
+            ctk.CTkLabel(
+                self.project_list_frame,
+                text=self.t("maintenance.no_saved_projects"),
+                text_color=("gray35", "gray70"),
+            ).grid(row=0, column=0, padx=16, pady=22)
+            return
+
+        for row, summary in enumerate(summaries):
+            card = ctk.CTkFrame(
+                self.project_list_frame,
+                corner_radius=12,
+                border_width=1,
+            )
+            card.grid(row=row, column=0, padx=6, pady=5, sticky="ew")
+            card.grid_columnconfigure(0, weight=1)
+            status_key = f"maintenance.status_{summary.status}"
+            status_color = (
+                ("#287a46", "#49a56a")
+                if summary.status == "completed"
+                else ("#9a6200", "#e0a43b")
+            )
+            ctk.CTkLabel(
+                card,
+                text=summary.title,
+                font=ctk.CTkFont(size=16, weight="bold"),
+                anchor="w",
+            ).grid(row=0, column=0, padx=16, pady=(12, 3), sticky="ew")
+            ctk.CTkLabel(
+                card,
+                text=self.t(status_key),
+                text_color=status_color,
+                font=ctk.CTkFont(weight="bold"),
+            ).grid(row=0, column=1, padx=12, pady=(12, 3))
+            ctk.CTkLabel(
+                card,
+                text=self.t(
+                    "maintenance.saved_project_detail",
+                    completed=summary.completed_chapters,
+                    chapters=summary.total_chapters,
+                    failed=summary.failed_chapters,
+                    tokens=f"{summary.total_tokens:,}",
+                    updated=summary.updated_at.astimezone().strftime(
+                        "%Y-%m-%d %H:%M"
+                    ),
+                ),
+                anchor="w",
+                text_color=("gray35", "gray70"),
+            ).grid(row=1, column=0, padx=16, pady=(0, 12), sticky="ew")
+            ctk.CTkButton(
+                card,
+                text=(
+                    self.t("button.open_project")
+                    if summary.status == "completed"
+                    else self.t("button.resume_project")
+                ),
+                command=lambda path=summary.path: self._load_project_path(path),
+                width=135,
+            ).grid(row=1, column=1, padx=12, pady=(0, 12))
 
     def _global_provider_code(self) -> str:
         return self.provider_labels[self.global_provider_var.get()]
@@ -1830,6 +1950,17 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.project = project
         return project
 
+    def _ensure_project_storage(self, project: BookProject) -> Path:
+        if self.project_output_dir is None:
+            self.project_output_dir = create_project_directory(
+                projects_directory(),
+                project.settings.title or self.t("default.untitled_book"),
+                project.created_at,
+            )
+        self.project_file_path = self.project_output_dir / "project.json"
+        save_project(project, self.project_file_path)
+        return self.project_file_path
+
     def _generate_outline(self) -> None:
         if self.is_busy:
             return
@@ -1877,6 +2008,11 @@ class AIBookBatchWriterApp(ctk.CTk):
         except (ValueError, ValidationError) as exc:
             self._show_error("error.invalid_outline", exc)
             return
+        try:
+            project_path = self._ensure_project_storage(project)
+        except Exception as exc:
+            self._show_error("error.save_failed", exc)
+            return
 
         self.cancel_token = CancelToken()
         self.book_generation_started = True
@@ -1895,27 +2031,55 @@ class AIBookBatchWriterApp(ctk.CTk):
             Path,
             dict[str, Path] | None,
             Exception | None,
+            bool,
         ]:
             service = BookGenerationService(project.llm_settings)
             generated_project = service.generate_book(
                 project,
                 progress_callback=progress,
                 cancel_token=self.cancel_token,
+                checkpoint_callback=lambda value: save_project(
+                    value,
+                    project_path,
+                ),
             )
-            self.worker_queue.put(("worker_status", "status.saving_outputs"))
             output_dir = existing_output_dir or create_project_directory(
                 projects_directory(),
                 generated_project.settings.title
                 or self.t("default.untitled_book"),
                 generated_project.created_at,
             )
+            complete = all(
+                chapter.is_complete
+                for chapter in generated_project.chapters
+            )
+            self.worker_queue.put(
+                (
+                    "worker_status",
+                    (
+                        "status.saving_outputs"
+                        if complete
+                        else "status.saving_checkpoint"
+                    ),
+                )
+            )
             try:
-                paths = export_project_bundle(generated_project, output_dir)
+                if complete:
+                    paths = export_project_bundle(generated_project, output_dir)
+                else:
+                    save_project(generated_project, project_path)
+                    paths = {"json": project_path}
                 export_error: Exception | None = None
             except Exception as exc:
                 paths = None
                 export_error = exc
-            return generated_project, output_dir, paths, export_error
+            return (
+                generated_project,
+                output_dir,
+                paths,
+                export_error,
+                complete,
+            )
 
         self._start_worker("book", work)
 
@@ -2043,30 +2207,37 @@ class AIBookBatchWriterApp(ctk.CTk):
                 )
             )
             self._update_token_display()
+            try:
+                self._ensure_project_storage(self.project)
+                self._append_log(
+                    self.t(
+                        "log.project_checkpointed",
+                        path=self.project_file_path,
+                    )
+                )
+            except Exception as exc:
+                messagebox.showwarning(
+                    self.t("dialog.information_title"),
+                    self.t("error.autosave_failed", error=str(exc)),
+                )
         else:
-            project, output_dir, paths, export_error = result
+            project, output_dir, paths, export_error, complete = result
             self.project = project
             self.project_output_dir = output_dir
             self.project_file_path = output_dir / "project.json"
             self._replace_text(self.preview_text, render_markdown(self.project))
             self.book_generation_started = True
-            self.book_generation_finished = True
-            self.auto_export_completed = export_error is None
+            self.book_generation_finished = complete
+            self.auto_export_completed = complete and export_error is None
             self.current_step = 3
             self._show_page("create", show_warning=False)
-            self.progress_bar.set(1)
-            has_failures = any(
-                chapter.status == "failed" for chapter in self.project.chapters
-            )
-            status_key = (
-                "status.completed_with_errors"
-                if has_failures
-                else "status.completed"
-            )
+            if complete:
+                self.progress_bar.set(1)
+            status_key = "status.completed" if complete else "status.incomplete"
             self.status_var.set(self.t(status_key))
             self.task_var.set(self.t(status_key))
             self._update_token_display()
-            if export_error is None and paths is not None:
+            if complete and export_error is None and paths is not None:
                 self._append_log(
                     self.t("log.auto_exported", path=output_dir)
                 )
@@ -2074,7 +2245,7 @@ class AIBookBatchWriterApp(ctk.CTk):
                     self.t("dialog.information_title"),
                     self.t("message.auto_exported", path=output_dir),
                 )
-            else:
+            elif export_error is not None:
                 self._append_log(
                     self.t("log.auto_export_failed", error=str(export_error))
                 )
@@ -2086,7 +2257,16 @@ class AIBookBatchWriterApp(ctk.CTk):
                         error=str(export_error),
                     ),
                 )
+            else:
+                messagebox.showwarning(
+                    self.t("dialog.information_title"),
+                    self.t(
+                        "message.incomplete_saved",
+                        path=self.project_file_path,
+                    ),
+                )
         self._update_maintenance_summary()
+        self._refresh_project_list()
         self._refresh_flow_ui()
 
     def _handle_cancelled(self) -> None:
@@ -2096,6 +2276,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         self.task_var.set(self.t("status.cancelled"))
         self._append_log(self.t("status.cancelled"))
         self._update_maintenance_summary()
+        self._refresh_project_list()
         self._refresh_flow_ui()
 
     def _handle_worker_error(self, operation: str, error: Exception) -> None:
@@ -2119,6 +2300,7 @@ class AIBookBatchWriterApp(ctk.CTk):
         )
         self._show_error(key, error)
         self._update_maintenance_summary()
+        self._refresh_project_list()
         self._refresh_flow_ui()
 
     def _cancel_generation(self) -> None:
@@ -2237,6 +2419,7 @@ class AIBookBatchWriterApp(ctk.CTk):
             self.status_var.set(self.t("status.project_saved"))
             self._append_log(self.t("log.project_saved", path=path))
             self._update_maintenance_summary()
+            self._refresh_project_list()
             messagebox.showinfo(
                 self.t("dialog.information_title"),
                 self.t("message.project_saved"),
@@ -2255,6 +2438,9 @@ class AIBookBatchWriterApp(ctk.CTk):
         )
         if not path:
             return
+        self._load_project_path(Path(path))
+
+    def _load_project_path(self, path: Path) -> None:
         try:
             project = load_project(path)
             self.project = project
@@ -2277,6 +2463,7 @@ class AIBookBatchWriterApp(ctk.CTk):
                 self.t("dialog.information_title"),
                 self.t("message.project_loaded"),
             )
+            self._refresh_project_list()
         except Exception as exc:
             self._show_error("error.load_failed", exc)
 

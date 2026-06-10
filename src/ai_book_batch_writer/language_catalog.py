@@ -23,3 +23,25 @@ def load_output_languages(path: str | Path | None = None) -> list[str]:
     }
     names.update({"English", "Spanish"})
     return sorted(names, key=str.casefold)
+
+
+def filter_languages(
+    languages: list[str],
+    query: str,
+    limit: int = 120,
+) -> list[str]:
+    """Prioritize language names that start with or contain a search query."""
+    normalized = query.strip().casefold()
+    if not normalized:
+        return languages[:limit]
+    starts = [
+        language
+        for language in languages
+        if language.casefold().startswith(normalized)
+    ]
+    contains = [
+        language
+        for language in languages
+        if normalized in language.casefold() and language not in starts
+    ]
+    return [*starts, *contains][:limit]

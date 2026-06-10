@@ -37,5 +37,18 @@ def load_project(path: str | Path) -> BookProject:
     """Load and validate a project JSON file."""
     with Path(path).open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
-    return BookProject.model_validate(payload)
+    project = BookProject.model_validate(payload)
+    _normalize_interrupted_generation(project)
+    return project
 
+
+def _normalize_interrupted_generation(project: BookProject) -> None:
+    """Make transient generation states resumable after an interrupted run."""
+    for chapter in project.chapters:
+        if chapter.status == "generating":
+            chapter.status = "pending"
+            chapter.error = None
+        for section in chapter.sections:
+            if section.status == "generating":
+                section.status = "pending"
+                section.error = None

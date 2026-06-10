@@ -49,4 +49,26 @@ def test_settings_store_merges_updates(tmp_path) -> None:
 
     stored = store.save_merged({"language": "es"})
 
-    assert stored == {"language": "es", "appearance": "Dark"}
+    assert stored["language"] == "es"
+    assert stored["appearance"] == "Dark"
+
+
+def test_settings_store_migrates_old_3000_token_default(tmp_path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "global_llm": {
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                    "max_tokens": 3000,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    stored = SettingsStore(path).load()
+
+    assert stored["global_llm"]["max_tokens"] == 8096
+    assert stored["settings_schema_version"] == 2

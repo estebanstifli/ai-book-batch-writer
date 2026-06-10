@@ -17,19 +17,72 @@ def estimate_tokens(text: str) -> int:
 
 
 def total_tokens_from_message(message: Any) -> int:
-    """Read LangChain usage metadata with a conservative fallback."""
+    """Read total input and output tokens from common LangChain metadata."""
     usage = getattr(message, "usage_metadata", None)
-    if isinstance(usage, Mapping):
-        total = usage.get("total_tokens")
-        if isinstance(total, int):
-            return total
+    total = _tokens_from_mapping(usage)
+    if total:
+        return total
 
     metadata = getattr(message, "response_metadata", None)
     if isinstance(metadata, Mapping):
-        token_usage = metadata.get("token_usage")
-        if isinstance(token_usage, Mapping):
-            total = token_usage.get("total_tokens")
-            if isinstance(total, int):
+        for key in ("token_usage", "usage", "usage_metadata"):
+            total = _tokens_from_mapping(metadata.get(key))
+            if total:
                 return total
+        total = _tokens_from_mapping(metadata)
+        if total:
+            return total
     return 0
 
+
+def _tokens_from_mapping(value: Any) -> int:
+    if not isinstance(value, Mapping):
+        return 0
+
+    for key in ("total_tokens", "total_token_count"):
+        total = _non_negative_int(value.get(key))
+        if total is not None:
+            return total
+
+    input_tokens = _first_int(
+        value,
+        (
+            "input_tokens",
+            "prompt_tokens",
+            "prompt_token_count",
+            "prompt_eval_count",
+            "input_token_count",
+        ),
+    )
+    output_tokens = _first_int(
+        value,
+        (
+            "output_tokens",
+            "completion_tokens",
+            "candidates_token_count",
+            "eval_count",
+            "output_token_count",
+        ),
+    )
+    if input_tokens is not None or output_tokens is not None:
+        return (input_tokens or 0) + (output_tokens or 0)
+    return 0
+
+
+def _first_int(
+    value: Mapping[str, Any],
+    keys: tuple[str, ...],
+) -> int | None:
+    for key in keys:
+        parsed = _non_negative_int(value.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _non_negative_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    return None
